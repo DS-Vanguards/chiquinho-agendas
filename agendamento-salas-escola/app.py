@@ -24,7 +24,7 @@ import config
 from core.layout_sig import bind as _layout_bind
 from email_utils import send_notification
 from extensions import db
-from models import Booking, NotificationEmail, SystemConfig, User, init_default_data
+from models import Booking, NotificationEmail, SystemConfig, User, ensure_schema, init_default_data
 
 app = Flask(__name__)
 app.config.from_object(config)
@@ -738,6 +738,7 @@ def admin_delete_notification_email(email_id):
 
 with app.app_context():
     db.create_all()
+    ensure_schema()
     init_default_data()
 
 

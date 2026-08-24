@@ -14,6 +14,7 @@ from config import (
 )
 from core.layout_sig import layout_token as _layout_ref_sync
 from extensions import db
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 
@@ -183,6 +184,24 @@ class NotificationEmail(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     added_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+def ensure_schema() -> None:
+    """Ajusta colunas antigas no PostgreSQL. create_all não altera tabelas existentes."""
+    dialect = db.engine.dialect.name
+    if dialect != "postgresql":
+        return
+    statements = [
+        "ALTER TABLE bookings ALTER COLUMN room TYPE VARCHAR(20)",
+        "ALTER TABLE bookings ALTER COLUMN status TYPE VARCHAR(20)",
+        "ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20)",
+    ]
+    for sql in statements:
+        try:
+            db.session.execute(text(sql))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 def init_default_data():

@@ -22,7 +22,6 @@ SQLALCHEMY_TRACK_MODIFICATIONS = False
 # E-mails institucionais permitidos (ajuste o domínio da sua escola)
 ALLOWED_EMAIL_DOMAINS = [
     "al.educacao.sp.gov.br",
-    "aluno.educacao.sp.gov.br",
     "prof.educacao.sp.gov.br",
     "professor.educacao.sp.gov.br",
 ]
