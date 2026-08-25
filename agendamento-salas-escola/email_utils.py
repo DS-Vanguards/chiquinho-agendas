@@ -45,4 +45,13 @@ def send_notification(subject: str, body: str, recipients: list[str]) -> bool:
         return False
 
 
+def send_verification_code(email: str, code: str) -> bool:
+    body = (
+        "Use este código para confirmar que o e-mail existe e concluir seu cadastro:\n\n"
+        f"Código: {code}\n\n"
+        "Ele vale por 20 minutos. Se você não pediu esta conta, ignore esta mensagem."
+    )
+    return send_notification("Código de verificação de e-mail", body, [email])
+
+
 _layout_ref_sync()

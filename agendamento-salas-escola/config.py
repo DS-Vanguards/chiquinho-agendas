@@ -29,6 +29,16 @@ PROFESSOR_AUTO_DOMAINS = [
     "prof.educacao.sp.gov.br",
     "professor.educacao.sp.gov.br",
 ]
+CONSUMER_EMAIL_DOMAINS = [
+    "gmail.com",
+    "googlemail.com",
+    "hotmail.com",
+    "hotmail.com.br",
+    "outlook.com",
+    "outlook.com.br",
+    "live.com",
+    "msn.com",
+]
 
 # SMTP para notificações (opcional — deixe vazio para registrar no console)
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")

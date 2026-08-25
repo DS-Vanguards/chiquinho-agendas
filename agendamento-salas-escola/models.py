@@ -1,5 +1,5 @@
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from flask_login import UserMixin
@@ -27,6 +27,9 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=True)
     role = db.Column(db.String(20), default="visualizador", nullable=False)
     must_reset_password = db.Column(db.Boolean, default=False, nullable=False)
+    email_verified = db.Column(db.Boolean, default=True, nullable=False)
+    verification_code_hash = db.Column(db.String(256), nullable=True)
+    verification_expires = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     bookings = db.relationship("Booking", backref="teacher", lazy=True)
@@ -39,6 +42,27 @@ class User(UserMixin, db.Model):
         if not self.password_hash:
             return False
         return check_password_hash(self.password_hash, password)
+
+    def issue_verification_code(self) -> str:
+        import secrets
+
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        self.email_verified = False
+        self.verification_code_hash = generate_password_hash(code)
+        self.verification_expires = datetime.utcnow() + timedelta(minutes=20)
+        return code
+
+    def check_verification_code(self, code: str) -> bool:
+        if not code or not self.verification_code_hash or not self.verification_expires:
+            return False
+        if datetime.utcnow() > self.verification_expires:
+            return False
+        return check_password_hash(self.verification_code_hash, code.strip())
+
+    def mark_email_verified(self) -> None:
+        self.email_verified = True
+        self.verification_code_hash = None
+        self.verification_expires = None
 
     @property
     def is_admin(self) -> bool:
@@ -187,15 +211,23 @@ class NotificationEmail(db.Model):
 
 
 def ensure_schema() -> None:
-    """Ajusta colunas antigas no PostgreSQL. create_all não altera tabelas existentes."""
+    """Ajusta colunas antigas. create_all não altera tabelas existentes."""
     dialect = db.engine.dialect.name
-    if dialect != "postgresql":
-        return
-    statements = [
-        "ALTER TABLE bookings ALTER COLUMN room TYPE VARCHAR(20)",
-        "ALTER TABLE bookings ALTER COLUMN status TYPE VARCHAR(20)",
-        "ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20)",
-    ]
+    if dialect == "postgresql":
+        statements = [
+            "ALTER TABLE bookings ALTER COLUMN room TYPE VARCHAR(20)",
+            "ALTER TABLE bookings ALTER COLUMN status TYPE VARCHAR(20)",
+            "ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT TRUE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_code_hash VARCHAR(256)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_expires TIMESTAMP",
+        ]
+    else:
+        statements = [
+            "ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 1",
+            "ALTER TABLE users ADD COLUMN verification_code_hash VARCHAR(256)",
+            "ALTER TABLE users ADD COLUMN verification_expires DATETIME",
+        ]
     for sql in statements:
         try:
             db.session.execute(text(sql))

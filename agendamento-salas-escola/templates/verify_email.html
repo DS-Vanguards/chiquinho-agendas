@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Confirmar e-mail{% endblock %}
+{% block content %}
+<div class="auth-card">
+    <h1>Confirmar e-mail</h1>
+    <p class="subtitle">
+        Enviamos um código para <strong>{{ email }}</strong>.
+        Se esta caixa Gmail/Hotmail existir, a mensagem chega em instantes.
+    </p>
+
+    <form method="POST" class="form">
+        <label for="code">Código de 6 dígitos</label>
+        <input type="text" id="code" name="code" required maxlength="6" minlength="6"
+               inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code"
+               placeholder="000000">
+
+        <button type="submit" class="btn btn-primary btn-block">Confirmar e-mail</button>
+    </form>
+
+    <form method="POST" action="{{ url_for('resend_verification_code') }}" class="auth-link">
+        <button type="submit" class="btn btn-secondary btn-block">Reenviar código</button>
+    </form>
+
+    <p class="auth-link"><a href="{{ url_for('login') }}">Voltar ao login</a></p>
+</div>
+{% endblock %}
