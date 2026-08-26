@@ -79,7 +79,7 @@
         <p class="text-muted">Status atual: <strong>{% if auto_professor_enabled %}ligada{% else %}desligada{% endif %}</strong></p>
     </div>
     {% endif %}
-    <div class="table-wrapper">
+    <div class="table-wrapper admin-users-scroll">
         <table class="data-table">
             <thead>
                 <tr>
@@ -107,14 +107,18 @@
                         </form>
                         {% endif %}
                     
+                        {% if u.role != 'admin' or is_admin %}
                         <form method="POST" action="{{ url_for('admin_reset_password', user_id=u.id) }}" class="inline-form"
-                              onsubmit="return confirm('Redefinir senha de {{ u.username }}?');">
+                              data-username="{{ u.username }}"
+                              onsubmit="return confirm('Redefinir senha de ' + this.dataset.username + '?');">
                             <button type="submit" class="btn btn-sm btn-warning">Redefinir senha</button>
                         </form>
+                        {% endif %}
                     
                         {% if is_admin and u.id != current_user.id %}
                         <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}" class="inline-form"
-                              onsubmit="return confirm('Tem certeza que deseja EXCLUIR permanentemente o usuário {{ u.username }}? Todos os agendamentos dele serão apagados.');">
+                              data-username="{{ u.username }}"
+                              onsubmit="return confirm('Tem certeza que deseja EXCLUIR permanentemente o usuário ' + this.dataset.username + '? Todos os agendamentos dele serão apagados.');">
                             <button type="submit" class="btn btn-sm btn-danger">Excluir usuário</button>
                         </form>
                         {% endif %}
@@ -124,6 +128,58 @@
             </tbody>
         </table>
     </div>
+</section>
+
+<section class="admin-section">
+    <h2>Máquinas bloqueadas (DS-Vanguards)</h2>
+    <p class="text-muted">
+        Equipamentos que atingiram o limite de tentativas de criação de conta.
+        O primeiro bloqueio vale até o dia seguinte; a reincidência bloqueia por 1 mês.
+    </p>
+    {% if locked_machines %}
+    <div class="table-wrapper admin-users-scroll">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Token</th>
+                    <th>IP</th>
+                    <th>Tipo</th>
+                    <th>Bloqueado até</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in locked_machines %}
+                <tr>
+                    <td><code title="{{ m.token }}">{{ m.token_short() }}</code></td>
+                    <td>{{ m.ip_address }}</td>
+                    <td>
+                        {% if m.lock_level >= 2 %}
+                        <span class="badge badge-status badge-bloqueado">1 mês</span>
+                        {% else %}
+                        <span class="badge badge-status badge-agendado">24 horas</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ format_lock_until(m.locked_until) }}</td>
+                    <td class="actions-cell">
+                        <button type="button" class="btn btn-sm btn-secondary js-open-lock-panel"
+                                data-lock-id="{{ m.id }}"
+                                data-lock-token="{{ m.token_short() }}">
+                            Alterar bloqueio
+                        </button>
+                        <form method="POST" action="{{ url_for('admin_remove_machine_lock', lock_id=m.id) }}" class="inline-form"
+                              onsubmit="return confirm('Remover o bloqueio desta máquina?');">
+                            <button type="submit" class="btn btn-sm btn-danger">Remover bloqueio</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-muted">Nenhuma máquina bloqueada no momento.</p>
+    {% endif %}
 </section>
 
 <section class="admin-section">
@@ -198,4 +254,64 @@
     {% endif %}
 </section>
 {% endif %}
+
+<div id="lock-duration-panel" class="modal-overlay" hidden>
+    <div class="modal-box lock-duration-panel" role="dialog" aria-labelledby="lock-panel-title">
+        <h3 id="lock-panel-title">Alterar bloqueio</h3>
+        <p id="lock-panel-hint">Informe por quanto tempo esta máquina permanecerá bloqueada.</p>
+        <form id="lock-duration-form" method="POST" class="form">
+            <label for="lock-amount">Número</label>
+            <input type="text" id="lock-amount" name="amount" inputmode="numeric" autocomplete="off"
+                   placeholder="1, 2, 3, 4..." required>
+
+            <label for="lock-unit">Unidade</label>
+            <select id="lock-unit" name="unit" required>
+                <option value="hours">horas</option>
+                <option value="days" selected>dias</option>
+                <option value="weeks">semanas</option>
+                <option value="months">meses</option>
+                <option value="years">anos</option>
+            </select>
+
+            <div class="modal-actions">
+                <button type="button" id="lock-panel-cancel" class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Aplicar</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+(function () {
+    const panel = document.getElementById("lock-duration-panel");
+    const form = document.getElementById("lock-duration-form");
+    const hint = document.getElementById("lock-panel-hint");
+    const amount = document.getElementById("lock-amount");
+    const cancel = document.getElementById("lock-panel-cancel");
+    if (!panel || !form) return;
+
+    function closePanel() {
+        panel.hidden = true;
+        form.removeAttribute("action");
+        amount.value = "";
+    }
+
+    document.querySelectorAll(".js-open-lock-panel").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            const lockId = btn.getAttribute("data-lock-id");
+            const token = btn.getAttribute("data-lock-token") || "";
+            form.action = "/admin/machine-locks/" + lockId + "/duration";
+            hint.textContent = token
+                ? "Máquina " + token + " — informe por quanto tempo permanecerá bloqueada."
+                : "Informe por quanto tempo esta máquina permanecerá bloqueada.";
+            panel.hidden = false;
+            amount.focus();
+        });
+    });
+
+    cancel.addEventListener("click", closePanel);
+    panel.addEventListener("click", function (e) {
+        if (e.target === panel) closePanel();
+    });
+})();
+</script>
 {% endblock %}

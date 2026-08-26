@@ -6,6 +6,9 @@ from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import (
+    ADMIN_EMAIL,
+    ADMIN_PASSWORD,
+    ADMIN_USERNAME,
     DEFAULT_TIME_LIST_1,
     DEFAULT_TIME_LIST_2,
     LISTA2_SWITCH_HOUR,
@@ -27,6 +30,7 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=True)
     role = db.Column(db.String(20), default="visualizador", nullable=False)
     must_reset_password = db.Column(db.Boolean, default=False, nullable=False)
+    session_version = db.Column(db.Integer, default=0, nullable=False)
     email_verified = db.Column(db.Boolean, default=True, nullable=False)
     verification_code_hash = db.Column(db.String(256), nullable=True)
     verification_expires = db.Column(db.DateTime, nullable=True)
@@ -34,9 +38,16 @@ class User(UserMixin, db.Model):
 
     bookings = db.relationship("Booking", backref="teacher", lazy=True)
 
+    def get_id(self):
+        return f"{self.id}:{int(self.session_version or 0)}"
+
+    def bump_session(self) -> None:
+        self.session_version = int(self.session_version or 0) + 1
+
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
         self.must_reset_password = False
+        self.bump_session()
 
     def check_password(self, password: str) -> bool:
         if not self.password_hash:
@@ -210,6 +221,29 @@ class NotificationEmail(db.Model):
     added_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class MachineGuard(db.Model):
+    __tablename__ = "machine_guards"
+
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    ip_address = db.Column(db.String(64), nullable=False, index=True)
+    attempt_count = db.Column(db.Integer, default=0, nullable=False)
+    strike_count = db.Column(db.Integer, default=0, nullable=False)
+    lock_level = db.Column(db.Integer, default=0, nullable=False)
+    locked_until = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def is_locked(self) -> bool:
+        return bool(self.locked_until and self.locked_until > datetime.utcnow())
+
+    def is_severe_lock(self) -> bool:
+        return self.is_locked() and self.lock_level >= 2
+
+    def token_short(self) -> str:
+        return (self.token or "")[:10]
+
+
 def ensure_schema() -> None:
     """Ajusta colunas antigas. create_all não altera tabelas existentes."""
     dialect = db.engine.dialect.name
@@ -221,12 +255,14 @@ def ensure_schema() -> None:
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT TRUE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_code_hash VARCHAR(256)",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_expires TIMESTAMP",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER DEFAULT 0",
         ]
     else:
         statements = [
             "ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 1",
             "ALTER TABLE users ADD COLUMN verification_code_hash VARCHAR(256)",
             "ALTER TABLE users ADD COLUMN verification_expires DATETIME",
+            "ALTER TABLE users ADD COLUMN session_version INTEGER DEFAULT 0",
         ]
     for sql in statements:
         try:
@@ -239,16 +275,15 @@ def ensure_schema() -> None:
 def init_default_data():
     try:
         admin_exists = User.query.filter(
-            (User.username == "admin")
-            | (User.email == "admin@ds.vanguards.vercel.app")
+            (User.username == ADMIN_USERNAME) | (User.email == ADMIN_EMAIL)
         ).first()
-        if not admin_exists:
+        if not admin_exists and ADMIN_PASSWORD:
             admin = User(
-                username="admin",
-                email="admin@ds.vanguards.vercel.app",
+                username=ADMIN_USERNAME,
+                email=ADMIN_EMAIL,
                 role="admin",
             )
-            admin.set_password("admin123provisoriopasswordCHIQUINHO")
+            admin.set_password(ADMIN_PASSWORD)
             db.session.add(admin)
 
         if not SystemConfig.query.filter_by(key="time_slots").first():

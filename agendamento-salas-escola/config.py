@@ -1,8 +1,20 @@
 import os
 
+from dotenv import load_dotenv
+
+from hardening import is_production, load_secret_key
+
+load_dotenv()
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "chave-secreta-agendamento-salas-2026")
+SECRET_KEY = load_secret_key(BASE_DIR)
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SECURE = is_production()
+PREFERRED_URL_SCHEME = "https" if is_production() else "http"
+WTF_CSRF_SSL_STRICT = is_production()
+WTF_CSRF_TIME_LIMIT = 3600
 
 _database_url = (
     os.environ.get("DATABASE_URL")
@@ -40,12 +52,16 @@ CONSUMER_EMAIL_DOMAINS = [
     "msn.com",
 ]
 
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@ds.vanguards.vercel.app")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
 # SMTP para notificações (opcional — deixe vazio para registrar no console)
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_USER = os.environ.get("SMTP_USER", "ds.vanguards.data@gmail.com")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "xvsjheydhtrapojc")
-SMTP_FROM = os.environ.get("SMTP_FROM", "ds.vanguards.data@gmail.com")
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM = os.environ.get("SMTP_FROM", "") or SMTP_USER
 SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "true").lower() == "true"
 
 DEFAULT_TIME_LIST_1 = [

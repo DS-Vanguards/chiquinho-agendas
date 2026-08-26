@@ -14,6 +14,14 @@ services:
         fromDatabase:
           name: agendamento-salas-db
           property: connectionString
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
 
 databases:
   - name: agendamento-salas-db

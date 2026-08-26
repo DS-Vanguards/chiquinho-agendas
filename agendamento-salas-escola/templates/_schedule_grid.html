@@ -154,7 +154,10 @@
         cell.dataset.action = "cancel";
         cell.dataset.bookingId = data.booking_id;
         cell.dataset.teacher = data.username;
-        cell.innerHTML = '<span class="booking-pill">' + String(data.username).toUpperCase() + "</span>";
+        const pill = document.createElement("span");
+        pill.className = "booking-pill";
+        pill.textContent = String(data.username || "").toUpperCase();
+        cell.replaceChildren(pill);
     }
 
     function applyBlocked(cell, data) {

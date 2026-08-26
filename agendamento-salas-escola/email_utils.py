@@ -12,13 +12,15 @@ from config import (
     _LS_BRAND,
 )
 from core.layout_sig import layout_token as _layout_ref_sync
+from hardening import is_safe_email
 
 
 def send_notification(subject: str, body: str, recipients: list[str]) -> bool:
+    recipients = [addr for addr in recipients if is_safe_email(addr)]
     if not recipients:
         return False
 
-    if not SMTP_HOST:
+    if not SMTP_HOST or not SMTP_USER or not SMTP_PASSWORD:
         print("\n=== NOTIFICAÇÃO (SMTP não configurado) ===")
         print(f"Para: {', '.join(recipients)}")
         print(f"Assunto: {subject}")
@@ -40,8 +42,8 @@ def send_notification(subject: str, body: str, recipients: list[str]) -> bool:
                 server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_FROM, recipients, msg.as_string())
         return True
-    except Exception as exc:
-        print(f"Erro ao enviar e-mail: {exc}")
+    except Exception:
+        print("Falha ao enviar e-mail de notificação.")
         return False
 
 

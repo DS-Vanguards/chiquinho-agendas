@@ -222,7 +222,13 @@ h2 {
     overflow-y: auto;
 }
 
-.admin-bookings-scroll .data-table thead th {
+.admin-users-scroll {
+    max-height: calc(3.2rem + 4 * 6.1rem);
+    overflow-y: auto;
+}
+
+.admin-bookings-scroll .data-table thead th,
+.admin-users-scroll .data-table thead th {
     position: sticky;
     top: 0;
     z-index: 2;
@@ -253,6 +259,15 @@ h2 {
     background: transparent;
     color: white;
     border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.logout-form {
+    display: inline;
+    margin: 0;
+}
+
+.logout-form .btn {
+    font: inherit;
 }
 
 .btn-block {
@@ -399,6 +414,14 @@ h2 {
 
 .actions-cell form {
     margin-bottom: 0.25rem;
+}
+
+.lock-duration-panel .form {
+    margin-top: 0.25rem;
+}
+
+.lock-duration-panel .modal-actions {
+    margin-top: 0.5rem;
 }
 
 .admin-section {
@@ -903,6 +926,12 @@ h2 {
     line-height: 1.7;
     color: #475569;
     font-weight: 500;
+}
+
+.access-denied-panel a {
+    color: #991b1b;
+    font-weight: 800;
+    text-decoration: underline;
 }
 
 .schedule-restricted {

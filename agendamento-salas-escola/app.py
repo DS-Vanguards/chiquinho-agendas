@@ -1,12 +1,15 @@
 import os
 import threading
-from datetime import date, datetime, timedelta
+import uuid
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
     flash,
     jsonify,
+    make_response,
     redirect,
     render_template,
     request,
@@ -19,20 +22,39 @@ from flask_login import (
     login_user,
     logout_user,
 )
+from flask_wtf.csrf import CSRFProtect, generate_csrf
+from sqlalchemy.exc import IntegrityError
 
 import config
 from core.layout_sig import bind as _layout_bind
 from email_utils import send_notification
-from email_verify import (
-    consumer_mailbox_exists,
-    is_gmail_or_hotmail,
-    mailbox_domain_reachable,
-)
+from email_verify import mailbox_domain_reachable
 from extensions import db
-from models import Booking, NotificationEmail, SystemConfig, User, ensure_schema, init_default_data
+from hardening import (
+    LOGIN_ERROR,
+    add_security_headers,
+    apply_proxy_fix,
+    clear_password_reset,
+    client_ip,
+    is_safe_email,
+    pending_reset_user_id,
+    start_password_reset,
+    too_many_requests,
+)
+from models import (
+    Booking,
+    MachineGuard,
+    NotificationEmail,
+    SystemConfig,
+    User,
+    ensure_schema,
+    init_default_data,
+)
 
 app = Flask(__name__)
 app.config.from_object(config)
+apply_proxy_fix(app)
+CSRFProtect(app)
 _layout_bind(app)
 
 db.init_app(app)
@@ -43,7 +65,19 @@ login_manager.login_message = "Faça login para continuar."
 
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    raw = str(user_id or "")
+    try:
+        if ":" in raw:
+            uid, version = raw.split(":", 1)
+            user = db.session.get(User, int(uid))
+            if user is None:
+                return None
+            if str(int(user.session_version or 0)) != str(version):
+                return None
+            return user
+        return db.session.get(User, int(raw))
+    except (TypeError, ValueError):
+        return None
 
 
 def role_required(*roles):
@@ -66,8 +100,115 @@ def validate_institutional_email(email: str) -> bool:
     if "@" not in email:
         return False
     domain = email.split("@", 1)[1]
-    allowed = list(config.ALLOWED_EMAIL_DOMAINS) + list(config.CONSUMER_EMAIL_DOMAINS)
-    return any(domain == d or domain.endswith("." + d) for d in allowed)
+    return any(
+        domain == d or domain.endswith("." + d) for d in config.ALLOWED_EMAIL_DOMAINS
+    )
+
+
+def allowed_email_domains_text() -> str:
+    return ", ".join("@" + d for d in config.ALLOWED_EMAIL_DOMAINS)
+
+
+MACHINE_COOKIE = "dv_mid"
+REGISTER_ATTEMPT_LIMIT = 4
+DS_SUPPORT_URL = "https://ds-vanguards.vercel.app/"
+
+
+def _client_ip() -> str:
+    return client_ip() or "0.0.0.0"
+
+
+def _new_machine_token() -> str:
+    return uuid.uuid4().hex
+
+
+def get_or_create_machine_guard(persist: bool = True):
+    ip = _client_ip()
+    token = request.cookies.get(MACHINE_COOKIE, "").strip()
+    guard = None
+    if token:
+        guard = MachineGuard.query.filter_by(token=token).first()
+    if not guard:
+        active_on_ip = (
+            MachineGuard.query.filter(
+                MachineGuard.ip_address == ip,
+                MachineGuard.locked_until != None,  # noqa: E711
+                MachineGuard.locked_until > datetime.utcnow(),
+            )
+            .order_by(MachineGuard.locked_until.desc())
+            .first()
+        )
+        if active_on_ip:
+            guard = active_on_ip
+            token = guard.token
+    if not guard:
+        token = token or _new_machine_token()
+        guard = MachineGuard(token=token, ip_address=ip)
+        if persist:
+            db.session.add(guard)
+            db.session.commit()
+    elif persist and guard.ip_address != ip:
+        guard.ip_address = ip
+        guard.updated_at = datetime.utcnow()
+        db.session.commit()
+    return guard
+
+
+def attach_machine_cookie(response, token: str):
+    response.set_cookie(
+        MACHINE_COOKIE,
+        token,
+        max_age=60 * 60 * 24 * 400,
+        httponly=True,
+        samesite="Lax",
+        secure=request.is_secure or request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip() == "https",
+        path="/",
+    )
+    return response
+
+
+def apply_register_lock(guard: MachineGuard) -> None:
+    now = datetime.utcnow()
+    if guard.strike_count >= 1:
+        guard.lock_level = 2
+        guard.locked_until = now + timedelta(days=30)
+        guard.strike_count = 2
+    else:
+        guard.lock_level = 1
+        guard.locked_until = now + timedelta(days=1)
+        guard.strike_count = 1
+    guard.attempt_count = 0
+    guard.updated_at = now
+    db.session.commit()
+
+
+def local_timezone():
+    try:
+        return ZoneInfo(config.TIMEZONE)
+    except Exception:
+        return timezone(timedelta(hours=-3))
+
+
+def format_lock_until(value) -> str:
+    if not value:
+        return "—"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    local = value.astimezone(local_timezone())
+    return local.strftime("%d/%m/%Y %H:%M")
+
+
+def register_lock_response(guard: MachineGuard):
+    severe = guard.is_severe_lock()
+    response = make_response(
+        render_template(
+            "register.html",
+            register_blocked=True,
+            block_severe=severe,
+            support_url=DS_SUPPORT_URL,
+        )
+    )
+    return attach_machine_cookie(response, guard.token)
 
 
 def parse_booking_date(value: str):
@@ -138,7 +279,13 @@ def inject_globals():
         "ROOM_LABELS": {room["id"]: room["label"] for room in config.GRID_ROOMS},
         "STATUSES": config.BOOKING_STATUSES,
         "MORNING_RESTRICTED_ROOMS": config.MORNING_RESTRICTED_ROOMS,
+        "csrf_token": generate_csrf,
     }
+
+
+@app.after_request
+def set_security_headers(response):
+    return add_security_headers(response)
 
 
 WEEKDAYS_PT = [
@@ -215,7 +362,10 @@ def create_booking(room, booking_date, start_time, end_time, teacher_id, status=
     if status != "bloqueado" and is_morning_room_restricted(room):
         return False, "No turno da manhã, as salas 01 a 04 não podem ser agendadas.", None
 
-    conflict = Booking.query.filter_by(room=room, booking_date=booking_date).all()
+    query = Booking.query.filter_by(room=room, booking_date=booking_date)
+    if db.engine.dialect.name != "sqlite":
+        query = query.with_for_update()
+    conflict = query.all()
     if any(
         times_overlap(start_time, end_time, b.start_time, b.end_time) for b in conflict
     ):
@@ -230,7 +380,11 @@ def create_booking(room, booking_date, start_time, end_time, teacher_id, status=
         teacher_id=teacher_id,
     )
     db.session.add(booking)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return False, "Já existe um agendamento neste horário para esta sala.", None
 
     if status != "bloqueado":
         teacher = db.session.get(User, teacher_id)
@@ -265,6 +419,10 @@ def login():
         return redirect(url_for(get_home_endpoint()))
 
     if request.method == "POST":
+        if too_many_requests("login", 8, 15 * 60):
+            flash("Muitas tentativas. Aguarde alguns minutos e tente de novo.", "error")
+            return render_template("login.html")
+
         identifier = request.form.get("identifier", "").strip()
         password = request.form.get("password", "")
 
@@ -273,14 +431,15 @@ def login():
         ).first()
 
         if not user:
-            flash("Usuário ou e-mail não encontrado.", "error")
+            flash(LOGIN_ERROR, "error")
             return render_template("login.html")
 
         if user.must_reset_password or not user.password_hash:
+            start_password_reset(user.id)
             return render_template("set_password.html", user=user, forced=True)
 
         if not user.check_password(password):
-            flash("Senha incorreta.", "error")
+            flash(LOGIN_ERROR, "error")
             return render_template("login.html")
 
         login_user(user)
@@ -295,9 +454,29 @@ def register():
     if current_user.is_authenticated:
         return redirect(url_for(get_home_endpoint()))
 
+    guard = get_or_create_machine_guard(persist=False)
+    if guard.is_locked():
+        return register_lock_response(guard)
+
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        email = request.form.get("email", "").strip().lower()
+        if too_many_requests("register", 8, 15 * 60):
+            flash("Muitas tentativas. Aguarde alguns minutos e tente de novo.", "error")
+            response = make_response(render_template("register.html", register_blocked=False))
+            return attach_machine_cookie(response, guard.token)
+
+        guard = get_or_create_machine_guard(persist=True)
+        if guard.id is None:
+            db.session.add(guard)
+            db.session.commit()
+        guard.attempt_count = (guard.attempt_count or 0) + 1
+        guard.updated_at = datetime.utcnow()
+        db.session.commit()
+        if guard.attempt_count >= REGISTER_ATTEMPT_LIMIT:
+            apply_register_lock(guard)
+            return register_lock_response(guard)
+
+        username = request.form.get("username", "").strip()[:80]
+        email = request.form.get("email", "").strip().lower()[:120]
         password = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
 
@@ -305,7 +484,9 @@ def register():
             flash("Nome de usuário deve ter pelo menos 3 caracteres.", "error")
         elif not validate_institutional_email(email):
             flash(
-                "Use um e-mail institucional, Gmail ou Hotmail/Outlook válido.",
+                "Use um e-mail dos domínios permitidos: "
+                + allowed_email_domains_text()
+                + ".",
                 "error",
             )
         elif not mailbox_domain_reachable(email):
@@ -319,17 +500,6 @@ def register():
         elif User.query.filter_by(email=email).first():
             flash("Este e-mail já está cadastrado.", "error")
         else:
-            if is_gmail_or_hotmail(email):
-                exists = consumer_mailbox_exists(email)
-                if exists is False:
-                    flash("Este e-mail não existe.", "error")
-                    return render_template("register.html")
-                if exists is None:
-                    flash(
-                        "Não foi possível verificar se este e-mail Gmail/Hotmail existe. Tente novamente.",
-                        "error",
-                    )
-                    return render_template("register.html")
             role = "professor" if should_auto_assign_professor(email) else "visualizador"
             user = User(username=username, email=email, role=role, email_verified=True)
             user.set_password(password)
@@ -339,21 +509,27 @@ def register():
                 flash("Cadastro realizado como professor! Faça login para continuar.", "success")
             else:
                 flash("Cadastro realizado! Faça login para continuar.", "success")
-            return redirect(url_for("login"))
+            response = make_response(redirect(url_for("login")))
+            return attach_machine_cookie(response, guard.token)
 
-    return render_template("register.html")
+    response = make_response(render_template("register.html", register_blocked=False))
+    return attach_machine_cookie(response, guard.token)
 
 
 @app.route("/set-password", methods=["POST"])
 def set_password():
-    user_id = request.form.get("user_id", type=int)
+    if too_many_requests("set-password", 8, 15 * 60):
+        flash("Muitas tentativas. Aguarde alguns minutos e tente de novo.", "error")
+        return redirect(url_for("login"))
+
+    uid = pending_reset_user_id()
+    user = db.session.get(User, uid) if uid else None
+    if not user or not (user.must_reset_password or not user.password_hash):
+        flash("Esta conta não está aguardando redefinição de senha.", "error")
+        return redirect(url_for("login"))
+
     password = request.form.get("password", "")
     confirm = request.form.get("confirm_password", "")
-
-    user = db.session.get(User, user_id)
-    if not user:
-        flash("Usuário não encontrado.", "error")
-        return redirect(url_for("login"))
 
     if len(password) < 6:
         flash("A senha deve ter pelo menos 6 caracteres.", "error")
@@ -365,18 +541,27 @@ def set_password():
 
     user.set_password(password)
     db.session.commit()
+    clear_password_reset()
     login_user(user)
     flash("Senha definida com sucesso!", "success")
     return redirect(url_for(get_home_endpoint(user)))
 
 @app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
-@role_required("admin", "moderador")
+@role_required("admin")
 def admin_delete_user(user_id):
     user = db.session.get(User, user_id)
     if user:
         if user.id == current_user.id:
             flash("Você não pode excluir sua própria conta.", "error")
             return redirect(url_for("admin_panel"))
+        if user.role == "admin" and not current_user.is_admin:
+            flash("Apenas um administrador pode excluir contas de administrador.", "error")
+            return redirect(url_for("admin_panel"))
+        if user.role == "admin":
+            admins = User.query.filter_by(role="admin").count()
+            if admins <= 1:
+                flash("Não é possível excluir o último administrador.", "error")
+                return redirect(url_for("admin_panel"))
             
         try:
             # Remove agendamentos vinculados para evitar erros no banco
@@ -395,7 +580,7 @@ def admin_delete_user(user_id):
     return redirect(url_for("admin_panel"))
 
 
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])
 @login_required
 def logout():
     logout_user()
@@ -465,6 +650,9 @@ def agendamentos():
 @app.route("/agendamentos/agendar-rapido", methods=["POST"])
 @role_required("professor")
 def agendar_rapido():
+    if too_many_requests("book", 80, 10 * 60):
+        return jsonify({"success": False, "message": "Muitos agendamentos em pouco tempo. Tente de novo em instantes."}), 429
+
     room = request.form.get("room", "")
     booking_date = parse_booking_date(request.form.get("booking_date", ""))
     start_time = request.form.get("start_time", "")
@@ -584,6 +772,13 @@ def admin_panel():
         notification_emails=notification_emails,
         is_admin=current_user.is_admin,
         auto_professor_enabled=SystemConfig.is_auto_professor_enabled(),
+        locked_machines=MachineGuard.query.filter(
+            MachineGuard.locked_until != None,  # noqa: E711
+            MachineGuard.locked_until > datetime.utcnow(),
+        )
+        .order_by(MachineGuard.locked_until.desc())
+        .all(),
+        format_lock_until=format_lock_until,
     )
 
 
@@ -633,6 +828,11 @@ def admin_update_role(user_id):
 
     user = db.session.get(User, user_id)
     if user and user.id != current_user.id:
+        if user.role == "admin" and role != "admin":
+            admins = User.query.filter_by(role="admin").count()
+            if admins <= 1:
+                flash("Não é possível remover o último administrador.", "error")
+                return redirect(url_for("admin_panel"))
         user.role = role
         db.session.commit()
         flash(f"Função de {user.username} atualizada para {role}.", "success")
@@ -644,8 +844,12 @@ def admin_update_role(user_id):
 def admin_reset_password(user_id):
     user = db.session.get(User, user_id)
     if user:
+        if user.role == "admin" and not current_user.is_admin:
+            flash("Apenas um administrador pode redefinir a senha de outro administrador.", "error")
+            return redirect(url_for("admin_panel"))
         user.password_hash = None
         user.must_reset_password = True
+        user.bump_session()
         db.session.commit()
         flash(
             f"Senha de {user.username} removida. O usuário deverá definir uma nova senha no próximo login.",
@@ -665,6 +869,61 @@ def admin_toggle_auto_professor():
         + ("ligada." if enabled else "desligada."),
         "success",
     )
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/machine-locks/<int:lock_id>/duration", methods=["POST"])
+@role_required("admin", "moderador")
+def admin_update_machine_lock(lock_id):
+    guard = db.session.get(MachineGuard, lock_id)
+    if not guard:
+        flash("Registro de bloqueio não encontrado.", "error")
+        return redirect(url_for("admin_panel"))
+
+    raw_amount = (request.form.get("amount") or "").strip()
+    try:
+        amount = int(raw_amount)
+    except ValueError:
+        flash("Informe um número válido para o tempo de bloqueio.", "error")
+        return redirect(url_for("admin_panel"))
+
+    amount = max(1, min(amount, 999))
+    unit = request.form.get("unit", "days")
+    if unit == "hours":
+        delta = timedelta(hours=amount)
+    elif unit == "weeks":
+        delta = timedelta(weeks=amount)
+    elif unit == "months":
+        delta = timedelta(days=30 * amount)
+    elif unit == "years":
+        delta = timedelta(days=365 * amount)
+    else:
+        delta = timedelta(days=amount)
+
+    guard.locked_until = datetime.utcnow() + delta
+    if delta >= timedelta(days=28):
+        guard.lock_level = max(guard.lock_level, 2)
+    guard.updated_at = datetime.utcnow()
+    db.session.commit()
+    flash("Tempo de bloqueio atualizado.", "success")
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/machine-locks/<int:lock_id>/remove", methods=["POST"])
+@role_required("admin", "moderador")
+def admin_remove_machine_lock(lock_id):
+    guard = db.session.get(MachineGuard, lock_id)
+    if not guard:
+        flash("Registro de bloqueio não encontrado.", "error")
+        return redirect(url_for("admin_panel"))
+
+    guard.locked_until = None
+    guard.lock_level = 0
+    guard.attempt_count = 0
+    guard.strike_count = 0
+    guard.updated_at = datetime.utcnow()
+    db.session.commit()
+    flash("Bloqueio removido.", "success")
     return redirect(url_for("admin_panel"))
 
 
@@ -731,7 +990,7 @@ def admin_switch_time_list():
 @role_required("admin")
 def admin_add_notification_email():
     email = request.form.get("email", "").strip().lower()
-    if not email or "@" not in email:
+    if not is_safe_email(email):
         flash("E-mail inválido.", "error")
     elif NotificationEmail.query.filter_by(email=email).first():
         flash("Este e-mail já está cadastrado.", "error")
@@ -760,4 +1019,8 @@ with app.app_context():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(
+        debug=os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes"),
+        host="127.0.0.1",
+        port=5000,
+    )

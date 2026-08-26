@@ -6,6 +6,7 @@
     <title>{% block title %}Agendamento de Salas{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <meta name="layout-token" content="{{ _lt }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 <body>
     {% if current_user.is_authenticated %}
@@ -25,7 +26,9 @@
             <a href="{{ url_for('admin_panel') }}">Administração</a>
             {% endif %}
             <span class="nav-user">{{ current_user.username }} ({{ current_user.role }})</span>
-            <a href="{{ url_for('logout') }}" class="btn btn-outline">Sair</a>
+            <form method="POST" action="{{ url_for('logout') }}" class="logout-form">
+                <button type="submit" class="btn btn-outline">Sair</button>
+            </form>
         </div>
     </nav>
     {% endif %}
@@ -56,5 +59,31 @@
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/ui-core.js') }}?v={{ _lt }}" defer></script>
+    <script>
+    (function () {
+      var meta = document.querySelector('meta[name="csrf-token"]');
+      if (!meta) return;
+      document.addEventListener("submit", function (event) {
+        var form = event.target;
+        if (!form || !form.method || form.method.toUpperCase() !== "POST") return;
+        if (form.querySelector('input[name="csrf_token"]')) return;
+        var input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "csrf_token";
+        input.value = meta.content;
+        form.appendChild(input);
+      }, true);
+      if (window.fetch) {
+        var originalFetch = window.fetch;
+        window.fetch = function (input, init) {
+          init = init || {};
+          var headers = new Headers(init.headers || {});
+          if (!headers.has("X-CSRFToken")) headers.set("X-CSRFToken", meta.content);
+          init.headers = headers;
+          return originalFetch.call(this, input, init);
+        };
+      }
+    })();
+    </script>
 </body>
 </html>

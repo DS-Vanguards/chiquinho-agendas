@@ -1,17 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Cadastro — Agendamento de Salas{% endblock %}
+{% block title %}{% if register_blocked %}{% if block_severe %}Acesso bloqueado{% else %}Acesso negado{% endif %}{% else %}Cadastro{% endif %} — Agendamento de Salas{% endblock %}
 {% block content %}
+{% if register_blocked %}
+<div class="access-denied-panel">
+    <div class="access-denied-icon" aria-hidden="true">&#128274;</div>
+    {% if block_severe %}
+    <h2>Acesso bloqueado</h2>
+    <p>
+        O sistema de proteção DS-Vanguards detectou diversas tentativas irregulares de criação de conta, contate um
+        <a href="{{ support_url }}" rel="noopener">Administrador</a>
+        do site.
+    </p>
+    {% else %}
+    <h2>Acesso negado</h2>
+    <p>
+        O sistema de proteção DS-Vanguards bloqueou seu acesso temporariamente devido atingir o limite de tentativas.
+    </p>
+    {% endif %}
+</div>
+{% else %}
 <div class="auth-card">
     <h1>Criar Conta</h1>
 
     <form method="POST" class="form">
         <label for="username">Nome de usuário</label>
-        <input type="text" id="username" name="username" required minlength="3"
+        <input type="text" id="username" name="username" required minlength="3" maxlength="80"
                placeholder="Ex: João">
 
         <label for="email">E-mail</label>
         <input type="email" id="email" name="email" required
-               placeholder="Ex:  joao@gmail.com ou joao@prof.educacao.sp.gov.br">
+               placeholder="Ex: joao@prof.educacao.sp.gov.br">
 
         <label for="password">Senha</label>
         <input type="password" id="password" name="password" required minlength="6">
@@ -24,4 +42,5 @@
 
     <p class="auth-link">Já tem conta? <a href="{{ url_for('login') }}">Entrar</a></p>
 </div>
+{% endif %}
 {% endblock %}
