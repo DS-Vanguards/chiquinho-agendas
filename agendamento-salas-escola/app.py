@@ -10,7 +10,6 @@ from flask import (
     redirect,
     render_template,
     request,
-    session,
     url_for,
 )
 from flask_login import (
@@ -23,8 +22,12 @@ from flask_login import (
 
 import config
 from core.layout_sig import bind as _layout_bind
-from email_utils import send_notification, send_verification_code
-from email_verify import is_gmail_or_hotmail, mailbox_domain_reachable
+from email_utils import send_notification
+from email_verify import (
+    consumer_mailbox_exists,
+    is_gmail_or_hotmail,
+    mailbox_domain_reachable,
+)
 from extensions import db
 from models import Booking, NotificationEmail, SystemConfig, User, ensure_schema, init_default_data
 
@@ -280,11 +283,6 @@ def login():
             flash("Senha incorreta.", "error")
             return render_template("login.html")
 
-        if not getattr(user, "email_verified", True):
-            session["verify_user_id"] = user.id
-            flash("Confirme seu e-mail para entrar. Enviamos um código para a caixa de entrada.", "info")
-            return redirect(url_for("verify_email"))
-
         login_user(user)
         flash(f"Bem-vindo(a), {user.username}!", "success")
         return redirect(url_for(get_home_endpoint(user)))
@@ -310,11 +308,8 @@ def register():
                 "Use um e-mail institucional, Gmail ou Hotmail/Outlook válido.",
                 "error",
             )
-        elif is_gmail_or_hotmail(email) and not mailbox_domain_reachable(email):
-            flash(
-                "Este e-mail Gmail/Hotmail não parece existir. Confira o endereço e tente novamente.",
-                "error",
-            )
+        elif not mailbox_domain_reachable(email):
+            flash("Este e-mail não existe.", "error")
         elif len(password) < 6:
             flash("A senha deve ter pelo menos 6 caracteres.", "error")
         elif password != confirm:
@@ -322,37 +317,22 @@ def register():
         elif User.query.filter_by(username=username).first():
             flash("Este nome de usuário já está em uso.", "error")
         elif User.query.filter_by(email=email).first():
-            existing = User.query.filter_by(email=email).first()
-            if existing and not getattr(existing, "email_verified", True):
-                session["verify_user_id"] = existing.id
-                flash("Este e-mail ainda precisa ser confirmado. Informe o código enviado.", "info")
-                return redirect(url_for("verify_email"))
             flash("Este e-mail já está cadastrado.", "error")
         else:
-            role = "professor" if should_auto_assign_professor(email) else "visualizador"
-            user = User(username=username, email=email, role=role)
-            user.set_password(password)
             if is_gmail_or_hotmail(email):
-                code = user.issue_verification_code()
-                db.session.add(user)
-                db.session.commit()
-                sent = send_verification_code(email, code)
-                session["verify_user_id"] = user.id
-                if sent:
+                exists = consumer_mailbox_exists(email)
+                if exists is False:
+                    flash("Este e-mail não existe.", "error")
+                    return render_template("register.html")
+                if exists is None:
                     flash(
-                        "Enviamos um código para o Gmail/Hotmail informado. "
-                        "Se a caixa existir, você receberá a mensagem em instantes.",
-                        "success",
-                    )
-                else:
-                    flash(
-                        "Não foi possível enviar o código para este e-mail. "
-                        "Verifique se o Gmail/Hotmail existe e tente reenviar.",
+                        "Não foi possível verificar se este e-mail Gmail/Hotmail existe. Tente novamente.",
                         "error",
                     )
-                return redirect(url_for("verify_email"))
-
-            user.email_verified = True
+                    return render_template("register.html")
+            role = "professor" if should_auto_assign_professor(email) else "visualizador"
+            user = User(username=username, email=email, role=role, email_verified=True)
+            user.set_password(password)
             db.session.add(user)
             db.session.commit()
             if role == "professor":
@@ -362,53 +342,6 @@ def register():
             return redirect(url_for("login"))
 
     return render_template("register.html")
-
-
-@app.route("/verificar-email", methods=["GET", "POST"])
-def verify_email():
-    user_id = session.get("verify_user_id")
-    user = db.session.get(User, user_id) if user_id else None
-    if not user:
-        flash("Não há cadastro pendente de verificação.", "error")
-        return redirect(url_for("register"))
-
-    if getattr(user, "email_verified", True):
-        session.pop("verify_user_id", None)
-        flash("E-mail já confirmado. Faça login.", "success")
-        return redirect(url_for("login"))
-
-    if request.method == "POST":
-        code = request.form.get("code", "").strip()
-        if user.check_verification_code(code):
-            user.mark_email_verified()
-            db.session.commit()
-            session.pop("verify_user_id", None)
-            flash("E-mail confirmado! Agora você pode entrar.", "success")
-            return redirect(url_for("login"))
-        flash("Código inválido ou expirado. Tente novamente ou reenvie o código.", "error")
-
-    return render_template("verify_email.html", email=user.email)
-
-
-@app.route("/verificar-email/reenviar", methods=["POST"])
-def resend_verification_code():
-    user_id = session.get("verify_user_id")
-    user = db.session.get(User, user_id) if user_id else None
-    if not user:
-        flash("Não há cadastro pendente de verificação.", "error")
-        return redirect(url_for("register"))
-
-    code = user.issue_verification_code()
-    db.session.commit()
-    sent = send_verification_code(user.email, code)
-    if sent:
-        flash("Novo código enviado. Confira a caixa de entrada e o spam.", "success")
-    else:
-        flash(
-            "Não foi possível enviar o código. Confira se o Gmail/Hotmail existe.",
-            "error",
-        )
-    return redirect(url_for("verify_email"))
 
 
 @app.route("/set-password", methods=["POST"])
