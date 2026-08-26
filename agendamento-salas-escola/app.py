@@ -28,7 +28,6 @@ from sqlalchemy.exc import IntegrityError
 import config
 from core.layout_sig import bind as _layout_bind
 from email_utils import send_notification
-from email_verify import mailbox_domain_reachable
 from extensions import db
 from hardening import (
     LOGIN_ERROR,
@@ -489,8 +488,6 @@ def register():
                 + ".",
                 "error",
             )
-        elif not mailbox_domain_reachable(email):
-            flash("Este e-mail não existe.", "error")
         elif len(password) < 6:
             flash("A senha deve ter pelo menos 6 caracteres.", "error")
         elif password != confirm:
@@ -648,7 +645,7 @@ def agendamentos():
 
 
 @app.route("/agendamentos/agendar-rapido", methods=["POST"])
-@role_required("professor")
+@role_required("professor", "admin")
 def agendar_rapido():
     if too_many_requests("book", 80, 10 * 60):
         return jsonify({"success": False, "message": "Muitos agendamentos em pouco tempo. Tente de novo em instantes."}), 429
@@ -675,7 +672,7 @@ def agendar_rapido():
 
 
 @app.route("/agendamentos/<int:booking_id>/cancelar", methods=["POST"])
-@role_required("professor")
+@role_required("professor", "admin")
 def cancelar_agendamento(booking_id):
     booking = db.session.get(Booking, booking_id)
     if not booking:

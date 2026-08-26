@@ -99,7 +99,7 @@ class User(UserMixin, db.Model):
         return self.role in ("admin", "moderador")
 
     def can_book(self) -> bool:
-        return self.role == "professor"
+        return self.role in ("professor", "admin")
 
     def can_block_slots(self) -> bool:
         return self.role == "coordenador"
