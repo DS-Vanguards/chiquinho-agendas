@@ -836,6 +836,42 @@ def admin_update_role(user_id):
     return redirect(url_for("admin_panel"))
 
 
+@app.route("/admin/users/add", methods=["POST"])
+@role_required("admin")
+def admin_add_user():
+    username = request.form.get("username", "").strip()[:80]
+    email = request.form.get("email", "").strip().lower()[:120]
+    password = request.form.get("password", "")
+    confirm = request.form.get("confirm_password", "")
+    role = request.form.get("role", "visualizador")
+    if role not in config.ROLES:
+        role = "visualizador"
+
+    if len(username) < 3:
+        flash("Nome de usuário deve ter pelo menos 3 caracteres.", "error")
+    elif not is_safe_email(email):
+        flash("E-mail inválido.", "error")
+    elif len(password) < 6:
+        flash("A senha deve ter pelo menos 6 caracteres.", "error")
+    elif password != confirm:
+        flash("As senhas não coincidem.", "error")
+    elif User.query.filter_by(username=username).first():
+        flash("Este nome de usuário já está em uso.", "error")
+    elif User.query.filter_by(email=email).first():
+        flash("Este e-mail já está cadastrado.", "error")
+    else:
+        user = User(username=username, email=email, role=role, email_verified=True)
+        user.set_password(password)
+        db.session.add(user)
+        try:
+            db.session.commit()
+            flash(f"Usuário {username} cadastrado com a função {role}.", "success")
+        except IntegrityError:
+            db.session.rollback()
+            flash("Este nome de usuário ou e-mail já está cadastrado.", "error")
+    return redirect(url_for("admin_panel"))
+
+
 @app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
 @role_required("admin", "moderador")
 def admin_reset_password(user_id):

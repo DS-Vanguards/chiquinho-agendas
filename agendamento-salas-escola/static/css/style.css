@@ -420,6 +420,19 @@ h2 {
     margin-top: 0.25rem;
 }
 
+.admin-section-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.add-user-panel {
+    max-width: 440px;
+}
+
+.add-user-panel .modal-actions,
 .lock-duration-panel .modal-actions {
     margin-top: 0.5rem;
 }

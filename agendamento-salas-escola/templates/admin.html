@@ -62,7 +62,12 @@
 </section>
 
 <section class="admin-section">
-    <h2>Usuários</h2>
+    <h2 class="admin-section-heading">
+        Usuários
+        {% if is_admin %}
+        <button type="button" class="btn btn-primary" id="js-open-add-user">Adicionar usuario</button>
+        {% endif %}
+    </h2>
     {% if is_admin %}
     <div class="auto-role-box">
         <p>
@@ -255,6 +260,41 @@
 </section>
 {% endif %}
 
+{% if is_admin %}
+<div id="add-user-panel" class="modal-overlay" hidden>
+    <div class="modal-box add-user-panel" role="dialog" aria-labelledby="add-user-title">
+        <h3 id="add-user-title">Criar Conta</h3>
+        <form method="POST" action="{{ url_for('admin_add_user') }}" class="form">
+            <label for="add-username">Nome de usuário</label>
+            <input type="text" id="add-username" name="username" required minlength="3" maxlength="80"
+                   placeholder="Ex: João">
+
+            <label for="add-email">E-mail</label>
+            <input type="email" id="add-email" name="email" required
+                   placeholder="Ex:  maria@gmail.com">
+
+            <label for="add-password">Senha</label>
+            <input type="password" id="add-password" name="password" required minlength="6">
+
+            <label for="add-confirm-password">Confirmar senha</label>
+            <input type="password" id="add-confirm-password" name="confirm_password" required minlength="6">
+
+            <label for="add-role">Função</label>
+            <select id="add-role" name="role">
+                {% for r in ROLES %}
+                <option value="{{ r }}" {% if r == 'visualizador' %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+            </select>
+
+            <div class="modal-actions">
+                <button type="button" id="add-user-cancel" class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Cadastrar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 <div id="lock-duration-panel" class="modal-overlay" hidden>
     <div class="modal-box lock-duration-panel" role="dialog" aria-labelledby="lock-panel-title">
         <h3 id="lock-panel-title">Alterar bloqueio</h3>
@@ -309,6 +349,27 @@
     });
 
     cancel.addEventListener("click", closePanel);
+    panel.addEventListener("click", function (e) {
+        if (e.target === panel) closePanel();
+    });
+})();
+
+(function () {
+    const panel = document.getElementById("add-user-panel");
+    const openBtn = document.getElementById("js-open-add-user");
+    const cancel = document.getElementById("add-user-cancel");
+    const username = document.getElementById("add-username");
+    if (!panel || !openBtn) return;
+
+    function closePanel() {
+        panel.hidden = true;
+    }
+
+    openBtn.addEventListener("click", function () {
+        panel.hidden = false;
+        if (username) username.focus();
+    });
+    if (cancel) cancel.addEventListener("click", closePanel);
     panel.addEventListener("click", function (e) {
         if (e.target === panel) closePanel();
     });
