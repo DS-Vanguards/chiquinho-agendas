@@ -374,5 +374,20 @@
         if (e.target === panel) closePanel();
     });
 })();
+
+(function () {
+    const wrap = document.querySelector(".admin-bookings-scroll");
+    if (!wrap) return;
+    const table = wrap.querySelector(".data-table");
+    if (!table || !table.tHead || !table.tBodies[0]) return;
+    const rows = table.tBodies[0].rows;
+    const visible = 6;
+    if (rows.length <= visible) return;
+    let height = table.tHead.offsetHeight;
+    for (let i = 0; i < visible; i++) {
+        height += rows[i].offsetHeight;
+    }
+    wrap.style.maxHeight = height + "px";
+})();
 </script>
 {% endblock %}

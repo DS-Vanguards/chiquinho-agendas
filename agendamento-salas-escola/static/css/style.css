@@ -218,7 +218,7 @@ h2 {
 }
 
 .admin-bookings-scroll {
-    max-height: calc(3.2rem + 6 * 6.1rem);
+    max-height: calc(2.9rem + 6 * 3.35rem);
     overflow-y: auto;
 }
 
