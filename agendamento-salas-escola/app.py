@@ -256,6 +256,14 @@ def get_home_endpoint(user=None) -> str:
     return "dashboard"
 
 
+def role_label(role: str) -> str:
+    return config.ROLE_LABELS.get(role, role)
+
+
+def is_last_of_role(role: str) -> bool:
+    return User.query.filter_by(role=role).count() <= 1
+
+
 def email_domain(email: str) -> str:
     if "@" not in email:
         return ""
@@ -304,6 +312,7 @@ def inject_globals():
         "ROOMS": config.ROOMS,
         "GRID_ROOMS": config.GRID_ROOMS,
         "ROOM_LABELS": {room["id"]: room["label"] for room in config.GRID_ROOMS},
+        "ROLE_LABELS": config.ROLE_LABELS,
         "STATUSES": config.BOOKING_STATUSES,
         "MORNING_RESTRICTED_ROOMS": config.MORNING_RESTRICTED_ROOMS,
         "csrf_token": generate_csrf,
@@ -386,7 +395,7 @@ def create_booking(room, booking_date, start_time, end_time, teacher_id, status=
         return False, "Horário inválido.", None
     if start_time >= end_time:
         return False, "O horário final deve ser posterior ao inicial.", None
-    if status != "bloqueado" and is_morning_room_restricted(room):
+    if status not in ("bloqueado", "indisponivel") and is_morning_room_restricted(room):
         return False, "No turno da manhã, as salas 01 a 04 não podem ser agendadas.", None
 
     query = Booking.query.filter_by(room=room, booking_date=booking_date)
@@ -413,7 +422,7 @@ def create_booking(room, booking_date, start_time, end_time, teacher_id, status=
         db.session.rollback()
         return False, "Já existe um agendamento neste horário para esta sala.", None
 
-    if status != "bloqueado":
+    if status not in ("bloqueado", "indisponivel"):
         teacher = db.session.get(User, teacher_id)
         body = (
             f"Novo agendamento registrado:\n\n"
@@ -425,11 +434,12 @@ def create_booking(room, booking_date, start_time, end_time, teacher_id, status=
         )
         notify_booking_async("Novo agendamento de sala", body)
 
-    message = (
-        "Horário bloqueado."
-        if status == "bloqueado"
-        else "Agendamento realizado com sucesso!"
-    )
+    if status == "bloqueado":
+        message = "Horário bloqueado."
+    elif status == "indisponivel":
+        message = "Horário marcado como indisponível."
+    else:
+        message = "Agendamento realizado com sucesso!"
     return True, message, booking
 
 
@@ -590,21 +600,19 @@ def set_password():
     return redirect(url_for(get_home_endpoint(user)))
 
 @app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
-@role_required("admin")
+@role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_delete_user(user_id):
     user = db.session.get(User, user_id)
     if user:
         if user.id == current_user.id:
             flash("Você não pode excluir sua própria conta.", "error")
             return redirect(url_for("admin_panel"))
-        if user.role == "admin" and not current_user.is_admin:
-            flash("Apenas um administrador pode excluir contas de administrador.", "error")
+        if not current_user.can_edit_user(user):
+            flash("Você não pode excluir este usuário.", "error")
             return redirect(url_for("admin_panel"))
-        if user.role == "admin":
-            admins = User.query.filter_by(role="admin").count()
-            if admins <= 1:
-                flash("Não é possível excluir o último administrador.", "error")
-                return redirect(url_for("admin_panel"))
+        if user.role == "vgs_owner" and is_last_of_role("vgs_owner"):
+            flash("Não é possível excluir o último VGS-Owner's.", "error")
+            return redirect(url_for("admin_panel"))
             
         try:
             # Remove agendamentos vinculados para evitar erros no banco
@@ -641,7 +649,13 @@ def dashboard():
         return render_template("dashboard.html", acesso_negado=True)
 
     context = {}
-    if current_user.role in ("admin", "moderador", "coordenador"):
+    if current_user.role in (
+        "admin",
+        "super_admin",
+        "vgs_owner",
+        "moderador",
+        "coordenador",
+    ):
         selected_date = get_selected_date(request.args.get("date"))
         context = build_schedule_context(selected_date)
     return render_template("dashboard.html", **context)
@@ -670,7 +684,13 @@ def agendamentos():
             **context,
         )
 
-    if current_user.role in ("admin", "moderador", "coordenador"):
+    if current_user.role in (
+        "admin",
+        "super_admin",
+        "vgs_owner",
+        "moderador",
+        "coordenador",
+    ):
         query = Booking.query.filter_by(booking_date=selected_date)
         bookings = query.order_by(Booking.start_time, Booking.room).all()
         prev_date = (selected_date - timedelta(days=1)).isoformat()
@@ -691,7 +711,7 @@ def agendamentos():
 
 
 @app.route("/agendamentos/agendar-rapido", methods=["POST"])
-@role_required("professor", "admin")
+@role_required("professor", "admin", "super_admin", "vgs_owner", "coordenador")
 def agendar_rapido():
     if too_many_requests("book", 80, 10 * 60):
         return jsonify({"success": False, "message": "Muitos agendamentos em pouco tempo. Tente de novo em instantes."}), 429
@@ -718,7 +738,7 @@ def agendar_rapido():
 
 
 @app.route("/agendamentos/<int:booking_id>/cancelar", methods=["POST"])
-@role_required("professor", "admin")
+@role_required("professor", "admin", "super_admin", "vgs_owner", "coordenador")
 def cancelar_agendamento(booking_id):
     booking = db.session.get(Booking, booking_id)
     if not booking:
@@ -729,7 +749,7 @@ def cancelar_agendamento(booking_id):
             {"success": False, "message": "Somente o autor pode cancelar o agendamento."}
         ), 403
 
-    if booking.status in ("presente", "bloqueado"):
+    if booking.status in ("presente", "bloqueado", "indisponivel"):
         return jsonify(
             {
                 "success": False,
@@ -743,7 +763,7 @@ def cancelar_agendamento(booking_id):
 
 
 @app.route("/agendamentos/bloquear", methods=["POST"])
-@role_required("coordenador")
+@role_required("coordenador", "vgs_owner")
 def bloquear_horario():
     room = request.form.get("room", "")
     booking_date = parse_booking_date(request.form.get("booking_date", ""))
@@ -765,16 +785,50 @@ def bloquear_horario():
     return jsonify(payload), status_code
 
 
+@app.route("/agendamentos/indisponivel", methods=["POST"])
+@role_required("vgs_owner")
+def marcar_indisponivel():
+    room = request.form.get("room", "")
+    booking_date = parse_booking_date(request.form.get("booking_date", ""))
+    start_time = request.form.get("start_time", "")
+    end_time = request.form.get("end_time", "")
+
+    success, message, booking = create_booking(
+        room,
+        booking_date,
+        start_time,
+        end_time,
+        current_user.id,
+        status="indisponivel",
+    )
+    status_code = 200 if success else 400
+    payload = {"success": success, "message": message}
+    if success and booking:
+        payload.update({"booking_id": booking.id, "status": "indisponivel"})
+    return jsonify(payload), status_code
+
+
 @app.route("/agendamentos/<int:booking_id>/desbloquear", methods=["POST"])
-@role_required("coordenador")
+@role_required("coordenador", "vgs_owner")
 def desbloquear_horario(booking_id):
     booking = db.session.get(Booking, booking_id)
-    if not booking or booking.status != "bloqueado":
+    if not booking:
+        return jsonify({"success": False, "message": "Bloqueio não encontrado."}), 404
+
+    if booking.status == "bloqueado":
+        if not current_user.can_block_slots():
+            return jsonify({"success": False, "message": "Sem permissão para desbloquear."}), 403
+        message = "Horário desbloqueado."
+    elif booking.status == "indisponivel":
+        if not current_user.can_mark_unavailable():
+            return jsonify({"success": False, "message": "Sem permissão para liberar este horário."}), 403
+        message = "Horário liberado."
+    else:
         return jsonify({"success": False, "message": "Bloqueio não encontrado."}), 404
 
     db.session.delete(booking)
     db.session.commit()
-    return jsonify({"success": True, "message": "Horário desbloqueado."})
+    return jsonify({"success": True, "message": message})
 
 
 @app.route("/agendamentos/<int:booking_id>/presente", methods=["POST"])
@@ -796,7 +850,7 @@ def marcar_presente(booking_id):
 
 
 @app.route("/admin")
-@role_required("admin", "moderador")
+@role_required(*config.STAFF_ROLES)
 def admin_panel():
     bookings = Booking.query.order_by(
         Booking.booking_date.desc(), Booking.start_time
@@ -813,7 +867,8 @@ def admin_panel():
         effective_active_list=SystemConfig.get_effective_active_list(),
         auto_list_switch=SystemConfig.is_auto_list_switch_enabled(),
         notification_emails=notification_emails,
-        is_admin=current_user.is_admin,
+        is_admin=current_user.has_admin_access(),
+        assignable_roles=current_user.assignable_roles(),
         auto_professor_enabled=SystemConfig.is_auto_professor_enabled(),
         locked_machines=MachineGuard.query.filter(
             MachineGuard.locked_until != None,  # noqa: E711
@@ -826,7 +881,7 @@ def admin_panel():
 
 
 @app.route("/admin/booking/<int:booking_id>/status", methods=["POST"])
-@role_required("admin")
+@role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_update_status(booking_id):
     status = request.form.get("status", "")
     if status not in config.BOOKING_STATUSES:
@@ -842,7 +897,7 @@ def admin_update_status(booking_id):
 
 
 @app.route("/admin/booking/<int:booking_id>/delete", methods=["POST"])
-@role_required("admin")
+@role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_delete_booking(booking_id):
     booking = db.session.get(Booking, booking_id)
     if booking:
@@ -853,7 +908,7 @@ def admin_delete_booking(booking_id):
 
 
 @app.route("/admin/bookings/delete-all", methods=["POST"])
-@role_required("admin")
+@role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_delete_all_bookings():
     Booking.query.delete()
     db.session.commit()
@@ -862,7 +917,7 @@ def admin_delete_all_bookings():
 
 
 @app.route("/admin/users/<int:user_id>/role", methods=["POST"])
-@role_required("admin")
+@role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_update_role(user_id):
     role = request.form.get("role", "")
     if role not in config.ROLES:
@@ -870,28 +925,38 @@ def admin_update_role(user_id):
         return redirect(url_for("admin_panel"))
 
     user = db.session.get(User, user_id)
-    if user and user.id != current_user.id:
-        if user.role == "admin" and role != "admin":
-            admins = User.query.filter_by(role="admin").count()
-            if admins <= 1:
-                flash("Não é possível remover o último administrador.", "error")
-                return redirect(url_for("admin_panel"))
-        user.role = role
-        db.session.commit()
-        flash(f"Função de {user.username} atualizada para {role}.", "success")
+    if not user or user.id == current_user.id:
+        flash("Não é possível alterar este cargo.", "error")
+        return redirect(url_for("admin_panel"))
+    if not current_user.can_edit_user(user):
+        flash("Você não pode alterar o cargo deste usuário.", "error")
+        return redirect(url_for("admin_panel"))
+    if role not in current_user.assignable_roles():
+        flash("Você não pode atribuir esta função.", "error")
+        return redirect(url_for("admin_panel"))
+    if user.role == "vgs_owner" and role != "vgs_owner" and is_last_of_role("vgs_owner"):
+        flash("Não é possível remover o último VGS-Owner's.", "error")
+        return redirect(url_for("admin_panel"))
+    user.role = role
+    db.session.commit()
+    flash(
+        f"Função de {user.username} atualizada para {role_label(role)}.",
+        "success",
+    )
     return redirect(url_for("admin_panel"))
 
 
 @app.route("/admin/users/add", methods=["POST"])
-@role_required("admin")
+@role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_add_user():
     username = request.form.get("username", "").strip()[:80]
     email = request.form.get("email", "").strip().lower()[:120]
     password = request.form.get("password", "")
     confirm = request.form.get("confirm_password", "")
     role = request.form.get("role", "visualizador")
-    if role not in config.ROLES:
-        role = "visualizador"
+    if role not in current_user.assignable_roles():
+        flash("Você não pode atribuir esta função.", "error")
+        return redirect(url_for("admin_panel"))
 
     if len(username) < 3:
         flash("Nome de usuário deve ter pelo menos 3 caracteres.", "error")
@@ -911,7 +976,7 @@ def admin_add_user():
         db.session.add(user)
         try:
             db.session.commit()
-            flash(f"Usuário {username} cadastrado com a função {role}.", "success")
+            flash(f"Usuário {username} cadastrado com a função {role_label(role)}.", "success")
         except IntegrityError:
             db.session.rollback()
             flash("Este nome de usuário ou e-mail já está cadastrado.", "error")
@@ -919,12 +984,12 @@ def admin_add_user():
 
 
 @app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
-@role_required("admin", "moderador")
+@role_required(*config.STAFF_ROLES)
 def admin_reset_password(user_id):
     user = db.session.get(User, user_id)
     if user:
-        if user.role == "admin" and not current_user.is_admin:
-            flash("Apenas um administrador pode redefinir a senha de outro administrador.", "error")
+        if not current_user.can_reset_user(user):
+            flash("Você não pode redefinir a senha deste usuário.", "error")
             return redirect(url_for("admin_panel"))
         user.password_hash = None
         user.must_reset_password = True
@@ -938,7 +1003,7 @@ def admin_reset_password(user_id):
 
 
 @app.route("/admin/settings/auto-professor", methods=["POST"])
-@role_required("admin")
+@role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_toggle_auto_professor():
     enabled = not SystemConfig.is_auto_professor_enabled()
     SystemConfig.set_auto_professor_enabled(enabled)
@@ -952,7 +1017,7 @@ def admin_toggle_auto_professor():
 
 
 @app.route("/admin/machine-locks/<int:lock_id>/duration", methods=["POST"])
-@role_required("admin", "moderador")
+@role_required(*config.STAFF_ROLES)
 def admin_update_machine_lock(lock_id):
     guard = db.session.get(MachineGuard, lock_id)
     if not guard:
@@ -989,7 +1054,7 @@ def admin_update_machine_lock(lock_id):
 
 
 @app.route("/admin/machine-locks/<int:lock_id>/remove", methods=["POST"])
-@role_required("admin", "moderador")
+@role_required(*config.STAFF_ROLES)
 def admin_remove_machine_lock(lock_id):
     guard = db.session.get(MachineGuard, lock_id)
     if not guard:
@@ -1007,7 +1072,7 @@ def admin_remove_machine_lock(lock_id):
 
 
 @app.route("/admin/time-slots", methods=["POST"])
-@role_required("admin")
+@role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_update_time_slots():
     lista1_raw = request.form.get("lista1", "")
     lista2_raw = request.form.get("lista2", "")
@@ -1032,7 +1097,7 @@ def admin_update_time_slots():
 
 
 @app.route("/admin/time-slots/auto-switch", methods=["POST"])
-@role_required("admin", "moderador")
+@role_required(*config.STAFF_ROLES)
 def admin_toggle_auto_list_switch():
     config_data = SystemConfig.get_time_config()
     currently_auto = bool(config_data.get("auto_switch", True))
@@ -1049,7 +1114,7 @@ def admin_toggle_auto_list_switch():
 
 
 @app.route("/admin/time-slots/switch", methods=["POST"])
-@role_required("admin", "moderador")
+@role_required(*config.STAFF_ROLES)
 def admin_switch_time_list():
     config_data = SystemConfig.get_time_config()
     if config_data.get("auto_switch", True):
@@ -1066,7 +1131,7 @@ def admin_switch_time_list():
 
 
 @app.route("/admin/notifications/add", methods=["POST"])
-@role_required("admin")
+@role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_add_notification_email():
     email = request.form.get("email", "").strip().lower()
     if not is_safe_email(email):
@@ -1081,7 +1146,7 @@ def admin_add_notification_email():
 
 
 @app.route("/admin/notifications/<int:email_id>/delete", methods=["POST"])
-@role_required("admin")
+@role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_delete_notification_email(email_id):
     row = db.session.get(NotificationEmail, email_id)
     if row:

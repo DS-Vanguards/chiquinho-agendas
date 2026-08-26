@@ -6,6 +6,7 @@ from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import (
+    ADMIN_ACCESS_ROLES,
     ADMIN_EMAIL,
     ADMIN_PASSWORD,
     ADMIN_USERNAME,
@@ -13,6 +14,8 @@ from config import (
     DEFAULT_TIME_LIST_2,
     LISTA2_SWITCH_HOUR,
     LISTA2_SWITCH_MINUTE,
+    ROLE_RANK,
+    ROLES,
     TIMEZONE,
 )
 from core.layout_sig import layout_token as _layout_ref_sync
@@ -28,7 +31,7 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=True)
-    role = db.Column(db.String(20), default="visualizador", nullable=False)
+    role = db.Column(db.String(32), default="visualizador", nullable=False)
     must_reset_password = db.Column(db.Boolean, default=False, nullable=False)
     session_version = db.Column(db.Integer, default=0, nullable=False)
     email_verified = db.Column(db.Boolean, default=True, nullable=False)
@@ -80,6 +83,14 @@ class User(UserMixin, db.Model):
         return self.role == "admin"
 
     @property
+    def is_super_admin(self) -> bool:
+        return self.role == "super_admin"
+
+    @property
+    def is_vgs_owner(self) -> bool:
+        return self.role == "vgs_owner"
+
+    @property
     def is_moderador(self) -> bool:
         return self.role == "moderador"
 
@@ -95,23 +106,64 @@ class User(UserMixin, db.Model):
     def is_visualizador(self) -> bool:
         return self.role == "visualizador"
 
+    def role_rank(self) -> int:
+        return ROLE_RANK.get(self.role, -1)
+
+    def has_admin_access(self) -> bool:
+        return self.role in ADMIN_ACCESS_ROLES
+
     def can_manage_users(self) -> bool:
-        return self.role in ("admin", "moderador")
+        return self.role in ("admin", "super_admin", "vgs_owner", "moderador")
 
     def can_book(self) -> bool:
-        return self.role in ("professor", "admin")
+        return self.role in ("professor", "admin", "super_admin", "vgs_owner", "coordenador")
 
     def can_block_slots(self) -> bool:
-        return self.role == "coordenador"
+        return self.role in ("coordenador", "vgs_owner")
+
+    def can_choose_marking(self) -> bool:
+        return self.role in ("coordenador", "vgs_owner")
+
+    def can_mark_unavailable(self) -> bool:
+        return self.role == "vgs_owner"
 
     def can_view_bookings(self) -> bool:
         return self.role in (
             "professor",
             "visualizador",
             "admin",
+            "super_admin",
+            "vgs_owner",
             "moderador",
             "coordenador",
         )
+
+    def assignable_roles(self) -> list:
+        if self.role == "admin":
+            return [r for r in ROLES if ROLE_RANK.get(r, 99) < ROLE_RANK["admin"]]
+        if self.role == "super_admin":
+            return [r for r in ROLES if ROLE_RANK.get(r, 99) <= ROLE_RANK["super_admin"]]
+        if self.role == "vgs_owner":
+            return list(ROLES)
+        return []
+
+    def can_edit_user(self, other) -> bool:
+        if other is None or other.id == self.id:
+            return False
+        if self.role == "vgs_owner":
+            return True
+        return self.role_rank() > ROLE_RANK.get(other.role, 99)
+
+    def can_reset_user(self, other) -> bool:
+        if other is None:
+            return False
+        if other.id == self.id:
+            return True
+        if self.role == "vgs_owner":
+            return True
+        if self.role == "moderador":
+            return ROLE_RANK.get(other.role, 99) < ROLE_RANK["admin"]
+        return self.role_rank() > ROLE_RANK.get(other.role, 99)
 
 
 class Booking(db.Model):
@@ -251,7 +303,7 @@ def ensure_schema() -> None:
         statements = [
             "ALTER TABLE bookings ALTER COLUMN room TYPE VARCHAR(20)",
             "ALTER TABLE bookings ALTER COLUMN status TYPE VARCHAR(20)",
-            "ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(20)",
+            "ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(32)",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT TRUE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_code_hash VARCHAR(256)",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_expires TIMESTAMP",
@@ -299,6 +351,13 @@ def init_default_data():
 
         if SystemConfig.query.filter_by(key="auto_professor_role").first() is None:
             SystemConfig.set("auto_professor_role", True)
+
+        if User.query.filter_by(role="vgs_owner").first() is None:
+            founder = User.query.filter(
+                (User.username == ADMIN_USERNAME) | (User.email == ADMIN_EMAIL)
+            ).first()
+            if founder:
+                founder.role = "vgs_owner"
 
         db.session.commit()
     except IntegrityError:

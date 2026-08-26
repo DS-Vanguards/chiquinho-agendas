@@ -21,10 +21,12 @@
             </div>
         </form>
 
-        {% if current_user.can_book() %}
+        {% if current_user.can_mark_unavailable() %}
+        <p class="schedule-hint">Clique nas células brancas para escolher: Bloquear, agendar no seu nome ou Indisponível. Clique no seu nome para desagendar, em BLOQUEADO ou em Indisponível para liberar.</p>
+        {% elif current_user.can_choose_marking() %}
+        <p class="schedule-hint">Clique nas células brancas para escolher: bloquear ou agendar no seu nome. Clique no seu nome para desagendar ou em BLOQUEADO para liberar.</p>
+        {% elif current_user.can_book() %}
         <p class="schedule-hint">Clique nas células brancas para agendar. Clique no seu nome para desagendar.</p>
-        {% elif current_user.can_block_slots() %}
-        <p class="schedule-hint">Clique nas células brancas para bloquear o horário. Clique em BLOQUEADO para liberar.</p>
         {% endif %}
         {% if active_list_name == 'lista1' %}
         <p class="schedule-hint schedule-hint-warn">No turno da manhã, as salas 01 a 04 não podem ser agendadas.</p>
@@ -53,15 +55,17 @@
                     {% set cell_key = (room.id, row.start_time, row.end_time) %}
                     {% set booking = schedule_grid.get(cell_key) %}
                     {% set is_blocked = booking and booking.status == 'bloqueado' %}
+                    {% set is_unavailable = booking and booking.status == 'indisponivel' %}
                     {% set morning_locked = active_list_name == 'lista1' and room.id in MORNING_RESTRICTED_ROOMS %}
-                    {% set own_booking = booking and booking.teacher_id == current_user.id and not is_blocked %}
-                    {% set clickable_book = current_user.can_book() and not morning_locked and not booking %}
+                    {% set own_booking = booking and booking.teacher_id == current_user.id and not is_blocked and not is_unavailable %}
+                    {% set clickable_choose = current_user.can_choose_marking() and not morning_locked and not booking %}
+                    {% set clickable_book = current_user.can_book() and not current_user.can_choose_marking() and not morning_locked and not booking %}
                     {% set clickable_cancel = current_user.can_book() and own_booking %}
-                    {% set clickable_block = current_user.can_block_slots() and not booking and not morning_locked %}
                     {% set clickable_unblock = current_user.can_block_slots() and is_blocked %}
+                    {% set clickable_clear_unavailable = current_user.can_mark_unavailable() and is_unavailable %}
                     <td class="col-room col-{{ room.style }} schedule-cell
-                        {% if is_blocked %}cell-blocked{% elif booking %}cell-booked{% elif morning_locked %}cell-unavailable{% else %}cell-empty{% endif %}
-                        {% if clickable_book or clickable_cancel or clickable_block or clickable_unblock %}cell-clickable{% endif %}"
+                        {% if is_blocked %}cell-blocked{% elif is_unavailable %}cell-marked-unavailable{% elif booking %}cell-booked{% elif morning_locked %}cell-unavailable{% else %}cell-empty{% endif %}
+                        {% if clickable_book or clickable_cancel or clickable_choose or clickable_unblock or clickable_clear_unavailable %}cell-clickable{% endif %}"
                         data-room="{{ room.id }}"
                         data-room-label="{{ room.label }}"
                         data-start="{{ row.start_time }}"
@@ -70,20 +74,28 @@
                         data-date="{{ filter_date }}"
                         data-can-book="{% if current_user.can_book() and not morning_locked %}1{% else %}0{% endif %}"
                         data-can-block="{% if current_user.can_block_slots() and not morning_locked %}1{% else %}0{% endif %}"
+                        data-can-choose="{% if current_user.can_choose_marking() and not morning_locked %}1{% else %}0{% endif %}"
+                        data-can-unavailable="{% if current_user.can_mark_unavailable() %}1{% else %}0{% endif %}"
+                        {% if clickable_choose %}data-action="choose"{% endif %}
                         {% if clickable_book %}data-action="book"{% endif %}
                         {% if clickable_cancel %}
                         data-action="cancel"
                         data-booking-id="{{ booking.id }}"
                         data-teacher="{{ booking.teacher.username }}"
                         {% endif %}
-                        {% if clickable_block %}data-action="block"{% endif %}
                         {% if clickable_unblock %}
                         data-action="unblock"
                         data-booking-id="{{ booking.id }}"
                         {% endif %}
-                        {% if booking and not is_blocked %}data-booking-id="{{ booking.id }}"{% endif %}>
+                        {% if clickable_clear_unavailable %}
+                        data-action="clear-unavailable"
+                        data-booking-id="{{ booking.id }}"
+                        {% endif %}
+                        {% if booking and not is_blocked and not is_unavailable %}data-booking-id="{{ booking.id }}"{% endif %}>
                         {% if is_blocked %}
                         <span class="booking-pill booking-pill-blocked">BLOQUEADO</span>
+                        {% elif is_unavailable %}
+                        <span class="unavailable-label">Indisponível</span>
                         {% elif booking %}
                         <span class="booking-pill">{{ booking.teacher.username | upper }}</span>
                         {% elif morning_locked %}
@@ -102,9 +114,17 @@
     <div class="modal-box">
         <h3 id="modal-title"></h3>
         <p id="modal-message"></p>
-        <div class="modal-actions">
+        <div id="modal-confirm-actions" class="modal-actions">
             <button type="button" id="modal-confirm" class="btn btn-primary">Confirmar</button>
             <button type="button" id="modal-cancel" class="btn btn-secondary">Cancelar</button>
+        </div>
+        <div id="modal-choice-actions" class="modal-actions modal-choice-actions" hidden>
+            <button type="button" id="choice-block" class="btn btn-warning">{% if current_user.can_mark_unavailable() %}Bloquear{% else %}Bloqueado{% endif %}</button>
+            <button type="button" id="choice-name" class="btn btn-primary"></button>
+            {% if current_user.can_mark_unavailable() %}
+            <button type="button" id="choice-unavailable" class="btn btn-secondary">Indisponível</button>
+            {% endif %}
+            <button type="button" id="choice-cancel" class="btn btn-outline">Cancelar</button>
         </div>
         <p id="modal-error" class="modal-error" hidden></p>
     </div>
@@ -120,8 +140,16 @@
     const modalConfirm = document.getElementById("modal-confirm");
     const modalCancel = document.getElementById("modal-cancel");
     const modalError = document.getElementById("modal-error");
+    const confirmActions = document.getElementById("modal-confirm-actions");
+    const choiceActions = document.getElementById("modal-choice-actions");
+    const choiceBlock = document.getElementById("choice-block");
+    const choiceName = document.getElementById("choice-name");
+    const choiceUnavailable = document.getElementById("choice-unavailable");
+    const choiceCancel = document.getElementById("choice-cancel");
     const bookUrl = "{{ url_for('agendar_rapido') }}";
     const blockUrl = "{{ url_for('bloquear_horario') }}";
+    const unavailableUrl = "{{ url_for('marcar_indisponivel') }}";
+    const currentUsername = {{ current_user.username | tojson }};
     let pendingAction = null;
     let busy = false;
 
@@ -140,16 +168,24 @@
         modalMessage.textContent = message;
         modalError.hidden = true;
         modalError.textContent = "";
+        const isChoice = action && action.type === "choose";
+        if (confirmActions) confirmActions.hidden = !!isChoice;
+        if (choiceActions) choiceActions.hidden = !isChoice;
+        if (isChoice && choiceName) {
+            choiceName.textContent = currentUsername;
+        }
         modal.hidden = false;
     }
 
     function closeModal() {
         modal.hidden = true;
         pendingAction = null;
+        if (confirmActions) confirmActions.hidden = false;
+        if (choiceActions) choiceActions.hidden = true;
     }
 
     function applyBooked(cell, data) {
-        cell.classList.remove("cell-empty", "cell-blocked", "cell-unavailable");
+        cell.classList.remove("cell-empty", "cell-blocked", "cell-unavailable", "cell-marked-unavailable");
         cell.classList.add("cell-booked", "cell-clickable");
         cell.dataset.action = "cancel";
         cell.dataset.bookingId = data.booking_id;
@@ -161,20 +197,31 @@
     }
 
     function applyBlocked(cell, data) {
-        cell.classList.remove("cell-empty", "cell-booked", "cell-unavailable");
+        cell.classList.remove("cell-empty", "cell-booked", "cell-unavailable", "cell-marked-unavailable");
         cell.classList.add("cell-blocked", "cell-clickable");
         cell.dataset.action = "unblock";
         cell.dataset.bookingId = data.booking_id;
         cell.innerHTML = '<span class="booking-pill booking-pill-blocked">BLOQUEADO</span>';
     }
 
+    function applyUnavailable(cell, data) {
+        cell.classList.remove("cell-empty", "cell-booked", "cell-blocked", "cell-unavailable");
+        cell.classList.add("cell-marked-unavailable", "cell-clickable");
+        cell.dataset.action = "clear-unavailable";
+        cell.dataset.bookingId = data.booking_id;
+        cell.innerHTML = '<span class="unavailable-label">Indisponível</span>';
+    }
+
     function applyEmpty(cell) {
-        cell.classList.remove("cell-booked", "cell-blocked");
+        cell.classList.remove("cell-booked", "cell-blocked", "cell-marked-unavailable");
         cell.classList.add("cell-empty");
         delete cell.dataset.bookingId;
         delete cell.dataset.teacher;
         cell.innerHTML = "";
-        if (cell.dataset.canBlock === "1") {
+        if (cell.dataset.canChoose === "1") {
+            cell.dataset.action = "choose";
+            cell.classList.add("cell-clickable");
+        } else if (cell.dataset.canBlock === "1") {
             cell.dataset.action = "block";
             cell.classList.add("cell-clickable");
         } else if (cell.dataset.canBook === "1") {
@@ -246,6 +293,28 @@
         busy = false;
     }
 
+    async function markUnavailableCell(cell) {
+        if (busy) return;
+        busy = true;
+        cell.classList.add("cell-busy");
+        const formData = new FormData();
+        formData.append("room", cell.dataset.room);
+        formData.append("booking_date", cell.dataset.date);
+        formData.append("start_time", cell.dataset.start);
+        formData.append("end_time", cell.dataset.end);
+        try {
+            const result = await postForm(unavailableUrl, formData);
+            if (result.data.success) {
+                applyUnavailable(cell, result.data);
+            } else {
+                showToast(result.data.message || "Não foi possível marcar como indisponível.", true);
+            }
+        } catch (err) {
+            showToast("Falha ao marcar como indisponível. Tente novamente.", true);
+        }
+        cell.classList.remove("cell-busy");
+        busy = false;
+    }
     async function unblockCell(cell) {
         if (busy) return;
         busy = true;
@@ -294,9 +363,15 @@
             const action = cell.dataset.action;
             if (action === "book") {
                 bookCell(cell);
+            } else if (action === "choose") {
+                openModal(
+                    "Como marcar este horário?",
+                    cell.dataset.roomLabel + " (" + cell.dataset.time + ")",
+                    { type: "choose", cell: cell }
+                );
             } else if (action === "block") {
                 blockCell(cell);
-            } else if (action === "unblock") {
+            } else if (action === "unblock" || action === "clear-unavailable") {
                 unblockCell(cell);
             } else if (action === "cancel") {
                 openModal(
@@ -309,6 +384,7 @@
     }
 
     modalCancel.addEventListener("click", closeModal);
+    if (choiceCancel) choiceCancel.addEventListener("click", closeModal);
     modal.addEventListener("click", function (e) {
         if (e.target === modal) closeModal();
     });
@@ -317,5 +393,30 @@
         if (!pendingAction || pendingAction.type !== "cancel") return;
         cancelCell(pendingAction.cell);
     });
+
+    if (choiceBlock) {
+        choiceBlock.addEventListener("click", function () {
+            if (!pendingAction || pendingAction.type !== "choose") return;
+            const cell = pendingAction.cell;
+            closeModal();
+            blockCell(cell);
+        });
+    }
+    if (choiceName) {
+        choiceName.addEventListener("click", function () {
+            if (!pendingAction || pendingAction.type !== "choose") return;
+            const cell = pendingAction.cell;
+            closeModal();
+            bookCell(cell);
+        });
+    }
+    if (choiceUnavailable) {
+        choiceUnavailable.addEventListener("click", function () {
+            if (!pendingAction || pendingAction.type !== "choose") return;
+            const cell = pendingAction.cell;
+            closeModal();
+            markUnavailableCell(cell);
+        });
+    }
 })();
 </script>

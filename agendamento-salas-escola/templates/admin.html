@@ -99,20 +99,20 @@
                 <tr>
                     <td>{{ u.username }}</td>
                     <td>{{ u.email }}</td>
-                    <td><span class="badge badge-{{ u.role }}">{{ u.role }}</span></td>
+                    <td><span class="badge badge-{{ u.role }}">{{ ROLE_LABELS.get(u.role, u.role) }}</span></td>
                     <td class="actions-cell">
-                        {% if is_admin and u.id != current_user.id %}
+                        {% if current_user.can_edit_user(u) %}
                         <form method="POST" action="{{ url_for('admin_update_role', user_id=u.id) }}" class="inline-form">
                             <select name="role">
-                                {% for r in ROLES %}
-                                <option value="{{ r }}" {% if u.role == r %}selected{% endif %}>{{ r }}</option>
+                                {% for r in assignable_roles %}
+                                <option value="{{ r }}" {% if u.role == r %}selected{% endif %}>{{ ROLE_LABELS.get(r, r) }}</option>
                                 {% endfor %}
                             </select>
                             <button type="submit" class="btn btn-sm btn-secondary">Salvar</button>
                         </form>
                         {% endif %}
                     
-                        {% if u.role != 'admin' or is_admin %}
+                        {% if current_user.can_reset_user(u) %}
                         <form method="POST" action="{{ url_for('admin_reset_password', user_id=u.id) }}" class="inline-form"
                               data-username="{{ u.username }}"
                               onsubmit="return confirm('Redefinir senha de ' + this.dataset.username + '?');">
@@ -120,7 +120,7 @@
                         </form>
                         {% endif %}
                     
-                        {% if is_admin and u.id != current_user.id %}
+                        {% if current_user.can_edit_user(u) %}
                         <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}" class="inline-form"
                               data-username="{{ u.username }}"
                               onsubmit="return confirm('Tem certeza que deseja EXCLUIR permanentemente o usuário ' + this.dataset.username + '? Todos os agendamentos dele serão apagados.');">
@@ -281,8 +281,8 @@
 
             <label for="add-role">Função</label>
             <select id="add-role" name="role">
-                {% for r in ROLES %}
-                <option value="{{ r }}" {% if r == 'visualizador' %}selected{% endif %}>{{ r }}</option>
+                {% for r in assignable_roles %}
+                <option value="{{ r }}" {% if r == 'visualizador' %}selected{% endif %}>{{ ROLE_LABELS.get(r, r) }}</option>
                 {% endfor %}
             </select>
 

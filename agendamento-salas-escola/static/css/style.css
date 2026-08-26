@@ -334,6 +334,8 @@ h2 {
 }
 
 .badge-admin { background: #fef3c7; color: #92400e; }
+.badge-super_admin { background: #fee2e2; color: #991b1b; text-transform: none; }
+.badge-vgs_owner { background: #1e293b; color: #f8fafc; text-transform: none; }
 .badge-moderador { background: #ede9fe; color: #5b21b6; }
 .badge-coordenador { background: #ffedd5; color: #9a3412; }
 .badge-professor { background: #dbeafe; color: #1e40af; }
@@ -345,6 +347,7 @@ h2 {
 .badge-reagendado { background: #ffedd5; color: #9a3412; }
 .badge-presente { background: #dcfce7; color: #166534; }
 .badge-bloqueado { background: #ffedd5; color: #9a3412; }
+.badge-indisponivel { background: #e2e8f0; color: #334155; }
 
 .auto-role-box {
     background: #eff6ff;
@@ -766,6 +769,21 @@ h2 {
     cursor: not-allowed;
 }
 
+.schedule-cell.cell-marked-unavailable {
+    background: repeating-linear-gradient(
+        135deg,
+        #e2e8f0,
+        #e2e8f0 6px,
+        #cbd5e1 6px,
+        #cbd5e1 12px
+    );
+}
+
+.schedule-cell.cell-clickable.cell-marked-unavailable:hover {
+    background: #cbd5e1 !important;
+    box-shadow: inset 0 0 0 2px #475569;
+}
+
 .unavailable-label {
     font-size: 0.68rem;
     font-weight: 800;
@@ -893,6 +911,15 @@ h2 {
     display: flex;
     gap: 0.75rem;
     justify-content: flex-end;
+}
+
+.modal-choice-actions {
+    flex-wrap: wrap;
+    justify-content: stretch;
+}
+
+.modal-choice-actions .btn {
+    flex: 1 1 8rem;
 }
 
 .modal-error {

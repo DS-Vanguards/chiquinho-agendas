@@ -121,8 +121,43 @@ GRID_ROOMS = [
     {"id": "INFO", "label": "INFORMÁTICA", "style": "especiais"},
     {"id": "BIB", "label": "SALA LEITURA", "style": "especiais"},
 ]
-ROLES = ["admin", "moderador", "coordenador", "professor", "visualizador"]
-BOOKING_STATUSES = ["pendente", "agendado", "reagendado", "presente", "bloqueado"]
+ROLES = [
+    "visualizador",
+    "professor",
+    "coordenador",
+    "moderador",
+    "admin",
+    "super_admin",
+    "vgs_owner",
+]
+ROLE_LABELS = {
+    "visualizador": "visualizador",
+    "professor": "professor",
+    "coordenador": "coordenador",
+    "moderador": "moderador",
+    "admin": "Admin",
+    "super_admin": "Super Admin",
+    "vgs_owner": "VGS-Owner's",
+}
+ROLE_RANK = {
+    "visualizador": 0,
+    "professor": 1,
+    "coordenador": 2,
+    "moderador": 3,
+    "admin": 4,
+    "super_admin": 5,
+    "vgs_owner": 6,
+}
+ADMIN_ACCESS_ROLES = ("admin", "super_admin", "vgs_owner")
+STAFF_ROLES = ("admin", "super_admin", "vgs_owner", "moderador")
+BOOKING_STATUSES = [
+    "pendente",
+    "agendado",
+    "reagendado",
+    "presente",
+    "bloqueado",
+    "indisponivel",
+]
 MORNING_RESTRICTED_ROOMS = ["01", "02", "03", "04"]
 
 # Metadados internos de layout
