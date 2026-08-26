@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Agendamento de Salas{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='images/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='images/favicon-32.png') }}">
+    <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='images/favicon-192.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/apple-touch-icon.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <meta name="layout-token" content="{{ _lt }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -12,7 +16,7 @@
     {% if current_user.is_authenticated %}
     <nav class="navbar">
         <a href="{{ url_for(home_endpoint) }}" class="nav-brand">
-            <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="nav-logo">
+            <img src="{{ url_for('static', filename='images/logo-round.png') }}" alt="Logo" class="nav-logo">
             <span>Chiquinho Agendamentos - Leste-3</span>
         </a>
         <div class="nav-links">

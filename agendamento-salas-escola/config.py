@@ -16,20 +16,54 @@ PREFERRED_URL_SCHEME = "https" if is_production() else "http"
 WTF_CSRF_SSL_STRICT = is_production()
 WTF_CSRF_TIME_LIMIT = 3600
 
+
+def _prepare_database_url(url: str) -> str:
+    # Vercel/Render usam postgres:// — SQLAlchemy precisa de postgresql://
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://") :]
+    if url.startswith("postgresql") and "sslmode=" not in url:
+        url += ("&" if "?" in url else "?") + "sslmode=require"
+    return url
+
+
 _database_url = (
-    os.environ.get("DATABASE_URL")
+    os.environ.get("POSTGRES_URL_NON_POOLING")
+    or os.environ.get("DATABASE_URL")
     or os.environ.get("POSTGRES_URL")
     or os.environ.get("POSTGRES_PRISMA_URL")
 )
 if _database_url:
-    # Vercel/Render usam postgres:// — SQLAlchemy precisa de postgresql://
-    if _database_url.startswith("postgres://"):
-        _database_url = _database_url.replace("postgres://", "postgresql://", 1)
-    SQLALCHEMY_DATABASE_URI = _database_url
+    SQLALCHEMY_DATABASE_URI = _prepare_database_url(_database_url)
 else:
     SQLALCHEMY_DATABASE_URI = f"sqlite:///{os.path.join(BASE_DIR, 'agendamento.db')}"
 
 SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+if SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
+    from sqlalchemy.pool import NullPool
+
+    _pg_connect = {
+        "sslmode": "require",
+        "connect_timeout": 10,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+    }
+    if is_production() or os.environ.get("VERCEL"):
+        # Serverless: não reutilizar conexão SSL morta entre invocações.
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            "poolclass": NullPool,
+            "connect_args": _pg_connect,
+        }
+    else:
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            "pool_pre_ping": True,
+            "pool_recycle": 280,
+            "pool_size": 5,
+            "max_overflow": 2,
+            "connect_args": _pg_connect,
+        }
 
 # E-mails institucionais permitidos (ajuste o domínio da sua escola)
 ALLOWED_EMAIL_DOMAINS = [

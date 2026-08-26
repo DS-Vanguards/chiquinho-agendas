@@ -13,6 +13,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     url_for,
 )
 from flask_login import (
@@ -24,11 +25,12 @@ from flask_login import (
 )
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
 
 import config
 from core.layout_sig import bind as _layout_bind
 from email_utils import send_notification
-from extensions import db
+from extensions import db, recover_db_session, retry_on_disconnect, _DISCONNECT_ERRORS
 from hardening import (
     LOGIN_ERROR,
     add_security_headers,
@@ -62,21 +64,46 @@ login_manager.login_view = "login"
 login_manager.login_message = "Faça login para continuar."
 
 
+@app.before_request
+def _revive_db_connection():
+    if request.endpoint in ("static", "favicon"):
+        return
+    if not str(app.config.get("SQLALCHEMY_DATABASE_URI", "")).startswith("postgresql"):
+        return
+    try:
+        db.session.execute(text("SELECT 1"))
+    except _DISCONNECT_ERRORS:
+        recover_db_session()
+
+
 @login_manager.user_loader
 def load_user(user_id):
     raw = str(user_id or "")
     try:
         if ":" in raw:
             uid, version = raw.split(":", 1)
-            user = db.session.get(User, int(uid))
-            if user is None:
-                return None
-            if str(int(user.session_version or 0)) != str(version):
-                return None
-            return user
-        return db.session.get(User, int(raw))
+        else:
+            uid, version = raw, None
+        uid = int(uid)
     except (TypeError, ValueError):
         return None
+
+    def _load():
+        user = db.session.get(User, uid)
+        if user is None:
+            return None
+        if version is not None and str(int(user.session_version or 0)) != str(version):
+            return None
+        return user
+
+    try:
+        return _load()
+    except _DISCONNECT_ERRORS:
+        recover_db_session()
+        try:
+            return _load()
+        except _DISCONNECT_ERRORS:
+            return None
 
 
 def role_required(*roles):
@@ -121,6 +148,7 @@ def _new_machine_token() -> str:
     return uuid.uuid4().hex
 
 
+@retry_on_disconnect
 def get_or_create_machine_guard(persist: bool = True):
     ip = _client_ip()
     token = request.cookies.get(MACHINE_COOKIE, "").strip()
@@ -412,6 +440,15 @@ def index():
     return redirect(url_for("login"))
 
 
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(
+        os.path.join(app.root_path, "static", "images"),
+        "favicon.ico",
+        mimetype="image/vnd.microsoft.icon",
+    )
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
@@ -453,7 +490,16 @@ def register():
     if current_user.is_authenticated:
         return redirect(url_for(get_home_endpoint()))
 
-    guard = get_or_create_machine_guard(persist=False)
+    try:
+        guard = get_or_create_machine_guard(persist=False)
+    except _DISCONNECT_ERRORS:
+        recover_db_session()
+        try:
+            guard = get_or_create_machine_guard(persist=False)
+        except _DISCONNECT_ERRORS:
+            recover_db_session()
+            token = request.cookies.get(MACHINE_COOKIE, "").strip() or _new_machine_token()
+            guard = MachineGuard(token=token, ip_address=_client_ip())
     if guard.is_locked():
         return register_lock_response(guard)
 
