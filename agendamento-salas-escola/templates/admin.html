@@ -91,6 +91,7 @@
                     <th>Usuário</th>
                     <th>E-mail</th>
                     <th>Função</th>
+                    <th>Turno</th>
                     <th>Ações</th>
                 </tr>
             </thead>
@@ -100,16 +101,23 @@
                     <td>{{ u.username }}</td>
                     <td>{{ u.email }}</td>
                     <td><span class="badge badge-{{ u.role }}">{{ ROLE_LABELS.get(u.role, u.role) }}</span></td>
+                    <td><span class="badge badge-shift">{{ u.shift_label() }}</span></td>
                     <td class="actions-cell">
                         {% if current_user.can_edit_user(u) %}
-                        <form method="POST" action="{{ url_for('admin_update_role', user_id=u.id) }}" class="inline-form">
-                            <select name="role">
-                                {% for r in assignable_roles %}
-                                <option value="{{ r }}" {% if u.role == r %}selected{% endif %}>{{ ROLE_LABELS.get(r, r) }}</option>
-                                {% endfor %}
-                            </select>
-                            <button type="submit" class="btn btn-sm btn-secondary">Salvar</button>
-                        </form>
+                        <button type="button" class="btn btn-sm btn-secondary js-open-role-panel"
+                                data-user-id="{{ u.id }}"
+                                data-username="{{ u.username }}"
+                                data-role="{{ u.role }}">
+                            Cargo
+                        </button>
+                        {% endif %}
+                        {% if is_admin %}
+                        <button type="button" class="btn btn-sm btn-secondary js-open-shift-panel"
+                                data-user-id="{{ u.id }}"
+                                data-username="{{ u.username }}"
+                                data-shift="{{ u.shift or '' }}">
+                            Turno
+                        </button>
                         {% endif %}
                     
                         {% if current_user.can_reset_user(u) %}
@@ -139,7 +147,7 @@
     <h2>Máquinas bloqueadas (DS-Vanguards)</h2>
     <p class="text-muted">
         Equipamentos que atingiram o limite de tentativas de criação de conta.
-        O primeiro bloqueio vale até o dia seguinte; a reincidência bloqueia por 1 mês.
+        O primeiro bloqueio vale 5 minutos; na 6ª reincidência o bloqueio passa a 1 dia.
     </p>
     {% if locked_machines %}
     <div class="table-wrapper admin-users-scroll">
@@ -160,9 +168,9 @@
                     <td>{{ m.ip_address }}</td>
                     <td>
                         {% if m.lock_level >= 2 %}
-                        <span class="badge badge-status badge-bloqueado">1 mês</span>
+                        <span class="badge badge-status badge-bloqueado">1 dia</span>
                         {% else %}
-                        <span class="badge badge-status badge-agendado">24 horas</span>
+                        <span class="badge badge-status badge-agendado">5 min</span>
                         {% endif %}
                     </td>
                     <td>{{ format_lock_until(m.locked_until) }}</td>
@@ -189,37 +197,20 @@
 
 <section class="admin-section">
     <h2>Horários</h2>
-    <p>Lista em uso agora: <strong>{{ effective_active_list }}</strong>
-        {% if auto_list_switch %}(automática){% else %}(manual){% endif %}
-    </p>
     <p class="text-muted">
-        Com a troca automática ligada, a grade usa <strong>Lista 1</strong> até 14:29
-        e <strong>Lista 2</strong> a partir de 14:30.
+        Cada professor vê a agenda do turno escolhido no primeiro acesso.
+        A troca automática por horário do dia foi substituída por isso.
     </p>
-
-    <div class="time-list-controls">
-        <form method="POST" action="{{ url_for('admin_toggle_auto_list_switch') }}" class="inline-form">
-            <button type="submit" class="btn {% if auto_list_switch %}btn-warning{% else %}btn-success{% endif %}">
-                {% if auto_list_switch %}Desativar troca automática{% else %}Ativar troca automática{% endif %}
-            </button>
-        </form>
-        <form method="POST" action="{{ url_for('admin_switch_time_list') }}" class="inline-form">
-            <button type="submit" class="btn btn-secondary"
-                    {% if auto_list_switch %}disabled title="Desative a troca automática para usar este botão"{% endif %}>
-                Trocar para {{ 'lista2' if effective_active_list == 'lista1' else 'lista1' }}
-            </button>
-        </form>
-    </div>
 
     {% if is_admin %}
     <form method="POST" action="{{ url_for('admin_update_time_slots') }}" class="form form-wide">
         <div class="form-row">
             <div class="form-group">
-                <label for="lista1">Lista 1 (um horário por linha)</label>
+                <label for="lista1">Manhã (um horário por linha)</label>
                 <textarea id="lista1" name="lista1" rows="8">{{ time_config.lista1 | join('\n') }}</textarea>
             </div>
             <div class="form-group">
-                <label for="lista2">Lista 2 (um horário por linha)</label>
+                <label for="lista2">Tarde (um horário por linha)</label>
                 <textarea id="lista2" name="lista2" rows="8">{{ time_config.lista2 | join('\n') }}</textarea>
             </div>
         </div>
@@ -227,8 +218,8 @@
     </form>
     {% else %}
     <div class="info-box">
-        <p><strong>Lista 1:</strong> {{ time_config.lista1 | join(', ') }}</p>
-        <p><strong>Lista 2:</strong> {{ time_config.lista2 | join(', ') }}</p>
+        <p><strong>Manhã:</strong> {{ time_config.lista1 | join(', ') }}</p>
+        <p><strong>Tarde:</strong> {{ time_config.lista2 | join(', ') }}</p>
     </div>
     {% endif %}
 </section>
@@ -289,6 +280,56 @@
             <div class="modal-actions">
                 <button type="button" id="add-user-cancel" class="btn btn-secondary">Cancelar</button>
                 <button type="submit" class="btn btn-primary">Cadastrar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<div id="role-panel" class="modal-overlay" hidden>
+    <div class="modal-box choice-panel" role="dialog" aria-labelledby="role-panel-title">
+        <h3 id="role-panel-title">Alterar cargo</h3>
+        <p id="role-panel-hint">Escolha a função deste usuário.</p>
+        <form id="role-panel-form" method="POST">
+            <div class="choice-options">
+                {% for r in assignable_roles %}
+                <label class="choice-option">
+                    <input type="radio" name="role" value="{{ r }}">
+                    <span>{{ ROLE_LABELS.get(r, r) }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="role-panel-cancel" class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Salvar cargo</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if is_admin %}
+<div id="shift-panel" class="modal-overlay" hidden>
+    <div class="modal-box choice-panel" role="dialog" aria-labelledby="shift-panel-title">
+        <h3 id="shift-panel-title">Alterar turno</h3>
+        <p id="shift-panel-hint">Defina o turno da agenda deste usuário.</p>
+        <form id="shift-panel-form" method="POST">
+            <div class="choice-options">
+                <label class="choice-option">
+                    <input type="radio" name="shift" value="manha">
+                    <span>Manhã</span>
+                </label>
+                <label class="choice-option">
+                    <input type="radio" name="shift" value="tarde">
+                    <span>Tarde</span>
+                </label>
+                <label class="choice-option">
+                    <input type="radio" name="shift" value="ambos">
+                    <span>Ambos os turnos</span>
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="shift-panel-cancel" class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Salvar turno</button>
             </div>
         </form>
     </div>
@@ -369,6 +410,72 @@
         panel.hidden = false;
         if (username) username.focus();
     });
+    if (cancel) cancel.addEventListener("click", closePanel);
+    panel.addEventListener("click", function (e) {
+        if (e.target === panel) closePanel();
+    });
+})();
+
+(function () {
+    const panel = document.getElementById("role-panel");
+    const form = document.getElementById("role-panel-form");
+    const hint = document.getElementById("role-panel-hint");
+    const cancel = document.getElementById("role-panel-cancel");
+    if (!panel || !form) return;
+
+    function closePanel() {
+        panel.hidden = true;
+        form.removeAttribute("action");
+    }
+
+    document.querySelectorAll(".js-open-role-panel").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            const userId = btn.getAttribute("data-user-id");
+            const name = btn.getAttribute("data-username") || "";
+            const role = btn.getAttribute("data-role") || "";
+            form.action = "/admin/users/" + userId + "/role";
+            hint.textContent = name ? "Escolha o cargo de " + name + "." : "Escolha a função deste usuário.";
+            form.querySelectorAll('input[name="role"]').forEach(function (input) {
+                input.checked = input.value === role;
+            });
+            panel.hidden = false;
+        });
+    });
+
+    if (cancel) cancel.addEventListener("click", closePanel);
+    panel.addEventListener("click", function (e) {
+        if (e.target === panel) closePanel();
+    });
+})();
+
+(function () {
+    const panel = document.getElementById("shift-panel");
+    const form = document.getElementById("shift-panel-form");
+    const hint = document.getElementById("shift-panel-hint");
+    const cancel = document.getElementById("shift-panel-cancel");
+    if (!panel || !form) return;
+
+    function closePanel() {
+        panel.hidden = true;
+        form.removeAttribute("action");
+    }
+
+    document.querySelectorAll(".js-open-shift-panel").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            const userId = btn.getAttribute("data-user-id");
+            const name = btn.getAttribute("data-username") || "";
+            const shift = btn.getAttribute("data-shift") || "";
+            form.action = "/admin/users/" + userId + "/shift";
+            hint.textContent = name
+                ? "Defina o turno da agenda de " + name + "."
+                : "Defina o turno da agenda deste usuário.";
+            form.querySelectorAll('input[name="shift"]').forEach(function (input) {
+                input.checked = input.value === shift;
+            });
+            panel.hidden = false;
+        });
+    });
+
     if (cancel) cancel.addEventListener("click", closePanel);
     panel.addEventListener("click", function (e) {
         if (e.target === panel) closePanel();

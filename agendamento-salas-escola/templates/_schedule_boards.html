@@ -1,0 +1,41 @@
+<div class="schedule-stack">
+    <div class="schedule-panel">
+        <div class="schedule-header">
+            <h1 class="schedule-title">AGENDAMENTO DE SALA</h1>
+            <p class="schedule-welcome">Bem-vindo(a), {{ current_user.username }}!</p>
+            {% if schedule_views|length == 1 %}
+            <p class="active-list-badge">Turno: <strong>{{ schedule_views[0].shift_label | upper }}</strong></p>
+            {% endif %}
+
+            <form method="GET" class="date-nav-form" id="date-nav-form">
+                <div class="date-nav">
+                    <a href="{{ url_for(form_action, date=prev_date) }}" class="date-arrow" title="Dia anterior">&#9664;</a>
+                    <input type="date" name="date" value="{{ filter_date }}" class="date-input" onchange="this.form.submit()">
+                    <span class="date-display">{{ date_label }}</span>
+                    <a href="{{ url_for(form_action, date=next_date) }}" class="date-arrow" title="Próximo dia">&#9654;</a>
+                </div>
+            </form>
+
+            {% if current_user.can_mark_unavailable() %}
+            <p class="schedule-hint">Clique nas células brancas para escolher: Bloquear, agendar no seu nome ou Indisponível. Clique no seu nome para desagendar, em BLOQUEADO ou em Indisponível para liberar.</p>
+            {% elif current_user.can_choose_marking() %}
+            <p class="schedule-hint">Clique nas células brancas para escolher: bloquear ou agendar no seu nome. Clique no seu nome para desagendar ou em BLOQUEADO para liberar.</p>
+            {% elif current_user.can_book() %}
+            <p class="schedule-hint">Clique nas células brancas para agendar. Clique no seu nome para desagendar.</p>
+            {% endif %}
+        </div>
+
+        <p id="schedule-toast" class="schedule-toast" hidden></p>
+    </div>
+
+    {% for view in schedule_views %}
+    {% set shift_key = view.shift %}
+    {% set grid_rooms = view.grid_rooms %}
+    {% set schedule_rows = view.schedule_rows %}
+    {% set schedule_grid = view.schedule_grid %}
+    {% if schedule_views|length > 1 %}
+    <h2 class="shift-board-title">Turno {{ view.shift_label }}</h2>
+    {% endif %}
+    {% include '_schedule_grid.html' %}
+    {% endfor %}
+</div>

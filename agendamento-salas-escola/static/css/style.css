@@ -1060,3 +1060,100 @@ h2 {
     font-weight: 800;
     text-decoration: underline;
 }
+
+.shift-pick-card {
+    max-width: 520px;
+}
+
+.shift-pick-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    margin-top: 1.25rem;
+}
+
+.shift-pick-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    width: 100%;
+    text-align: left;
+    padding: 1rem 1.15rem;
+    border: 2px solid #cbd5e1;
+    border-radius: 12px;
+    background: #fff;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+}
+
+.shift-pick-option:hover {
+    border-color: #2563eb;
+    background: #eff6ff;
+}
+
+.shift-pick-option strong {
+    font-size: 1.1rem;
+}
+
+.shift-pick-option span {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.shift-board-title {
+    margin: 1.75rem 0 0.5rem;
+    font-size: 1.15rem;
+    color: var(--primary);
+}
+
+.schedule-stack .schedule-grid-wrapper {
+    margin-top: 0.75rem;
+}
+
+.badge-shift {
+    background: #e0f2fe;
+    color: #075985;
+    text-transform: none;
+}
+
+.choice-panel {
+    max-width: 460px;
+}
+
+.choice-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    margin-bottom: 1.25rem;
+}
+
+.choice-option {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    cursor: pointer;
+    background: #f8fafc;
+}
+
+.choice-option:hover {
+    border-color: #93c5fd;
+    background: #eff6ff;
+}
+
+.choice-option:has(input:checked) {
+    border-color: #2563eb;
+    background: #dbeafe;
+}
+
+.choice-option input {
+    accent-color: #2563eb;
+}
+
+.choice-option span {
+    font-weight: 600;
+}

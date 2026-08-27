@@ -12,11 +12,9 @@ from config import (
     ADMIN_USERNAME,
     DEFAULT_TIME_LIST_1,
     DEFAULT_TIME_LIST_2,
-    LISTA2_SWITCH_HOUR,
-    LISTA2_SWITCH_MINUTE,
     ROLE_RANK,
     ROLES,
-    TIMEZONE,
+    SHIFT_LABELS,
 )
 from core.layout_sig import layout_token as _layout_ref_sync
 from extensions import db
@@ -38,6 +36,7 @@ class User(UserMixin, db.Model):
     verification_code_hash = db.Column(db.String(256), nullable=True)
     verification_expires = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    shift = db.Column(db.String(16), nullable=True)
 
     bookings = db.relationship("Booking", backref="teacher", lazy=True)
 
@@ -165,6 +164,25 @@ class User(UserMixin, db.Model):
             return ROLE_RANK.get(other.role, 99) < ROLE_RANK["admin"]
         return self.role_rank() > ROLE_RANK.get(other.role, 99)
 
+    def needs_shift_choice(self) -> bool:
+        return self.role == "professor" and self.shift not in ("manha", "tarde", "ambos")
+
+    def visible_shifts(self) -> list:
+        if self.shift == "ambos":
+            return ["manha", "tarde"]
+        if self.shift in ("manha", "tarde"):
+            return [self.shift]
+        if self.role != "professor":
+            return ["manha", "tarde"]
+        return []
+
+    def shift_label(self) -> str:
+        if self.shift in SHIFT_LABELS:
+            return SHIFT_LABELS[self.shift]
+        if self.role != "professor":
+            return SHIFT_LABELS["ambos"]
+        return "Não definido"
+
 
 class Booking(db.Model):
     __tablename__ = "bookings"
@@ -217,41 +235,23 @@ class SystemConfig(db.Model):
         config = SystemConfig.get("time_slots")
         if not config:
             config = {
-                "active_list": "lista1",
-                "auto_switch": True,
                 "lista1": DEFAULT_TIME_LIST_1,
                 "lista2": DEFAULT_TIME_LIST_2,
             }
             SystemConfig.set("time_slots", config)
             db.session.commit()
-        if "auto_switch" not in config:
-            config["auto_switch"] = True
-            SystemConfig.set("time_slots", config)
-            db.session.commit()
+        if not isinstance(config, dict):
+            config = {}
+        config.setdefault("lista1", list(DEFAULT_TIME_LIST_1))
+        config.setdefault("lista2", list(DEFAULT_TIME_LIST_2))
         return config
 
     @staticmethod
-    def is_auto_list_switch_enabled() -> bool:
+    def get_time_slots_for_shift(shift: str):
         config = SystemConfig.get_time_config()
-        return bool(config.get("auto_switch", True))
-
-    @staticmethod
-    def get_effective_active_list() -> str:
-        config = SystemConfig.get_time_config()
-        if not config.get("auto_switch", True):
-            return config.get("active_list", "lista1")
-        now = datetime.now(ZoneInfo(TIMEZONE))
-        switch_minutes = LISTA2_SWITCH_HOUR * 60 + LISTA2_SWITCH_MINUTE
-        current_minutes = now.hour * 60 + now.minute
-        if current_minutes >= switch_minutes:
-            return "lista2"
-        return "lista1"
-
-    @staticmethod
-    def get_active_time_slots():
-        config = SystemConfig.get_time_config()
-        active = SystemConfig.get_effective_active_list()
-        return config.get(active, DEFAULT_TIME_LIST_1)
+        if shift == "tarde":
+            return config.get("lista2", DEFAULT_TIME_LIST_2)
+        return config.get("lista1", DEFAULT_TIME_LIST_1)
 
     @staticmethod
     def is_auto_professor_enabled() -> bool:
@@ -308,6 +308,7 @@ def ensure_schema() -> None:
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_code_hash VARCHAR(256)",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_expires TIMESTAMP",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS shift VARCHAR(16)",
         ]
     else:
         statements = [
@@ -315,6 +316,7 @@ def ensure_schema() -> None:
             "ALTER TABLE users ADD COLUMN verification_code_hash VARCHAR(256)",
             "ALTER TABLE users ADD COLUMN verification_expires DATETIME",
             "ALTER TABLE users ADD COLUMN session_version INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN shift VARCHAR(16)",
         ]
     for sql in statements:
         try:
@@ -342,8 +344,6 @@ def init_default_data():
             SystemConfig.set(
                 "time_slots",
                 {
-                    "active_list": "lista1",
-                    "auto_switch": True,
                     "lista1": DEFAULT_TIME_LIST_1,
                     "lista2": DEFAULT_TIME_LIST_2,
                 },

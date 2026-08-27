@@ -76,6 +76,22 @@ def _revive_db_connection():
         recover_db_session()
 
 
+@app.before_request
+def _require_professor_shift():
+    if not getattr(current_user, "is_authenticated", False):
+        return
+    if request.endpoint in (
+        "escolher_turno",
+        "logout",
+        "static",
+        "favicon",
+        "set_password",
+    ):
+        return
+    if current_user.needs_shift_choice():
+        return redirect(url_for("escolher_turno"))
+
+
 @login_manager.user_loader
 def load_user(user_id):
     raw = str(user_id or "")
@@ -196,14 +212,13 @@ def attach_machine_cookie(response, token: str):
 
 def apply_register_lock(guard: MachineGuard) -> None:
     now = datetime.utcnow()
-    if guard.strike_count >= 1:
+    guard.strike_count = int(guard.strike_count or 0) + 1
+    if guard.strike_count >= 6:
         guard.lock_level = 2
-        guard.locked_until = now + timedelta(days=30)
-        guard.strike_count = 2
+        guard.locked_until = now + timedelta(days=1)
     else:
         guard.lock_level = 1
-        guard.locked_until = now + timedelta(days=1)
-        guard.strike_count = 1
+        guard.locked_until = now + timedelta(minutes=5)
     guard.attempt_count = 0
     guard.updated_at = now
     db.session.commit()
@@ -251,9 +266,19 @@ def times_overlap(start1, end1, start2, end2) -> bool:
 
 def get_home_endpoint(user=None) -> str:
     user = user or current_user
+    if user.is_authenticated and user.needs_shift_choice():
+        return "escolher_turno"
     if user.is_authenticated and user.is_professor:
         return "agendamentos"
     return "dashboard"
+
+
+def rooms_for_shift(shift: str) -> list:
+    return [room["id"] for room in config.GRID_ROOMS_BY_SHIFT.get(shift, ())]
+
+
+def user_can_use_shift(user, shift: str) -> bool:
+    return shift in (user.visible_shifts() if user else [])
 
 
 def role_label(role: str) -> str:
@@ -277,13 +302,6 @@ def should_auto_assign_professor(email: str) -> bool:
     return any(
         domain == d or domain.endswith("." + d)
         for d in config.PROFESSOR_AUTO_DOMAINS
-    )
-
-
-def is_morning_room_restricted(room: str) -> bool:
-    return (
-        SystemConfig.get_effective_active_list() == "lista1"
-        and room in config.MORNING_RESTRICTED_ROOMS
     )
 
 
@@ -311,10 +329,10 @@ def inject_globals():
         "ROLES": config.ROLES,
         "ROOMS": config.ROOMS,
         "GRID_ROOMS": config.GRID_ROOMS,
-        "ROOM_LABELS": {room["id"]: room["label"] for room in config.GRID_ROOMS},
+        "ROOM_LABELS": config.ROOM_LABELS,
         "ROLE_LABELS": config.ROLE_LABELS,
+        "SHIFT_LABELS": config.SHIFT_LABELS,
         "STATUSES": config.BOOKING_STATUSES,
-        "MORNING_RESTRICTED_ROOMS": config.MORNING_RESTRICTED_ROOMS,
         "csrf_token": generate_csrf,
     }
 
@@ -348,8 +366,8 @@ def format_date_label(selected: date) -> str:
     return f"{selected.strftime('%d/%m/%Y')} {weekday}"
 
 
-def build_schedule_context(selected_date: date):
-    time_slots = SystemConfig.get_active_time_slots()
+def build_shift_context(selected_date: date, shift: str):
+    time_slots = SystemConfig.get_time_slots_for_shift(shift)
     rows = []
     for index in range(len(time_slots) - 1):
         rows.append(
@@ -366,27 +384,54 @@ def build_schedule_context(selected_date: date):
     for booking in bookings:
         grid[(booking.room, booking.start_time, booking.end_time)] = booking
 
+    return {
+        "shift": shift,
+        "shift_label": config.SHIFT_LABELS.get(shift, shift),
+        "grid_rooms": config.GRID_ROOMS_BY_SHIFT.get(shift, []),
+        "schedule_rows": rows,
+        "schedule_grid": grid,
+    }
+
+
+def build_schedule_context(selected_date: date, user=None):
+    user = user or current_user
     prev_date = (selected_date - timedelta(days=1)).isoformat()
     next_date = (selected_date + timedelta(days=1)).isoformat()
-
+    views = [
+        build_shift_context(selected_date, shift) for shift in user.visible_shifts()
+    ]
     return {
         "selected_date": selected_date,
         "date_label": format_date_label(selected_date),
         "filter_date": selected_date.isoformat(),
         "prev_date": prev_date,
         "next_date": next_date,
-        "schedule_rows": rows,
-        "schedule_grid": grid,
-        "active_list_name": SystemConfig.get_effective_active_list(),
-        "auto_list_switch": SystemConfig.is_auto_list_switch_enabled(),
+        "schedule_views": views,
     }
 
 
-def create_booking(room, booking_date, start_time, end_time, teacher_id, status="agendado"):
-    time_slots = SystemConfig.get_active_time_slots()
+def create_booking(room, booking_date, start_time, end_time, teacher_id, status="agendado", shift=None):
+    if shift not in config.SHIFTS:
+        shift = None
+        for candidate in config.SHIFTS:
+            slots = SystemConfig.get_time_slots_for_shift(candidate)
+            if (
+                start_time in slots
+                and end_time in slots
+                and room in rooms_for_shift(candidate)
+            ):
+                shift = candidate
+                break
+    if shift not in config.SHIFTS:
+        return False, "Turno inválido.", None
+    if not user_can_use_shift(current_user, shift):
+        return False, "Você não pode agendar neste turno.", None
 
-    if room not in config.ROOMS:
-        return False, "Sala inválida.", None
+    time_slots = SystemConfig.get_time_slots_for_shift(shift)
+    allowed_rooms = rooms_for_shift(shift)
+
+    if room not in allowed_rooms:
+        return False, "Sala inválida para este turno.", None
     if not booking_date:
         return False, "Data inválida.", None
     if booking_date < date.today():
@@ -395,8 +440,6 @@ def create_booking(room, booking_date, start_time, end_time, teacher_id, status=
         return False, "Horário inválido.", None
     if start_time >= end_time:
         return False, "O horário final deve ser posterior ao inicial.", None
-    if status not in ("bloqueado", "indisponivel") and is_morning_room_restricted(room):
-        return False, "No turno da manhã, as salas 01 a 04 não podem ser agendadas.", None
 
     query = Booking.query.filter_by(room=room, booking_date=booking_date)
     if db.engine.dialect.name != "sqlite":
@@ -493,6 +536,25 @@ def login():
         return redirect(url_for(get_home_endpoint(user)))
 
     return render_template("login.html")
+
+
+@app.route("/turno", methods=["GET", "POST"])
+@login_required
+def escolher_turno():
+    if not current_user.needs_shift_choice():
+        return redirect(url_for("agendamentos" if current_user.is_professor else "dashboard"))
+
+    if request.method == "POST":
+        shift = request.form.get("shift", "")
+        if shift not in config.SHIFTS:
+            flash("Escolha o turno em que você dá aula.", "error")
+            return render_template("escolher_turno.html")
+        current_user.shift = shift
+        db.session.commit()
+        flash(f"Turno {config.SHIFT_LABELS[shift]} definido.", "success")
+        return redirect(url_for("agendamentos"))
+
+    return render_template("escolher_turno.html")
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -720,9 +782,10 @@ def agendar_rapido():
     booking_date = parse_booking_date(request.form.get("booking_date", ""))
     start_time = request.form.get("start_time", "")
     end_time = request.form.get("end_time", "")
+    shift = request.form.get("shift", "")
 
     success, message, booking = create_booking(
-        room, booking_date, start_time, end_time, current_user.id
+        room, booking_date, start_time, end_time, current_user.id, shift=shift
     )
     status_code = 200 if success else 400
     payload = {"success": success, "message": message}
@@ -769,6 +832,7 @@ def bloquear_horario():
     booking_date = parse_booking_date(request.form.get("booking_date", ""))
     start_time = request.form.get("start_time", "")
     end_time = request.form.get("end_time", "")
+    shift = request.form.get("shift", "")
 
     success, message, booking = create_booking(
         room,
@@ -777,6 +841,7 @@ def bloquear_horario():
         end_time,
         current_user.id,
         status="bloqueado",
+        shift=shift,
     )
     status_code = 200 if success else 400
     payload = {"success": success, "message": message}
@@ -792,6 +857,7 @@ def marcar_indisponivel():
     booking_date = parse_booking_date(request.form.get("booking_date", ""))
     start_time = request.form.get("start_time", "")
     end_time = request.form.get("end_time", "")
+    shift = request.form.get("shift", "")
 
     success, message, booking = create_booking(
         room,
@@ -800,6 +866,7 @@ def marcar_indisponivel():
         end_time,
         current_user.id,
         status="indisponivel",
+        shift=shift,
     )
     status_code = 200 if success else 400
     payload = {"success": success, "message": message}
@@ -864,8 +931,6 @@ def admin_panel():
         bookings=bookings,
         users=users,
         time_config=time_config,
-        effective_active_list=SystemConfig.get_effective_active_list(),
-        auto_list_switch=SystemConfig.is_auto_list_switch_enabled(),
         notification_emails=notification_emails,
         is_admin=current_user.has_admin_access(),
         assignable_roles=current_user.assignable_roles(),
@@ -946,7 +1011,25 @@ def admin_update_role(user_id):
     return redirect(url_for("admin_panel"))
 
 
-@app.route("/admin/users/add", methods=["POST"])
+@app.route("/admin/users/<int:user_id>/shift", methods=["POST"])
+@role_required(*config.ADMIN_ACCESS_ROLES)
+def admin_update_shift(user_id):
+    shift = request.form.get("shift", "")
+    if shift not in config.SHIFT_CHOICES:
+        flash("Turno inválido.", "error")
+        return redirect(url_for("admin_panel"))
+    if shift == config.SHIFT_AMBOS and not current_user.has_admin_access():
+        flash("Apenas um administrador pode liberar os dois turnos.", "error")
+        return redirect(url_for("admin_panel"))
+
+    user = db.session.get(User, user_id)
+    if not user:
+        flash("Usuário não encontrado.", "error")
+        return redirect(url_for("admin_panel"))
+    user.shift = shift
+    db.session.commit()
+    flash(f"Turno de {user.username} atualizado para {config.SHIFT_LABELS[shift]}.", "success")
+    return redirect(url_for("admin_panel"))
 @role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_add_user():
     username = request.form.get("username", "").strip()[:80]
@@ -1093,40 +1176,6 @@ def admin_update_time_slots():
     SystemConfig.set("time_slots", config_data)
     db.session.commit()
     flash("Horários atualizados.", "success")
-    return redirect(url_for("admin_panel"))
-
-
-@app.route("/admin/time-slots/auto-switch", methods=["POST"])
-@role_required(*config.STAFF_ROLES)
-def admin_toggle_auto_list_switch():
-    config_data = SystemConfig.get_time_config()
-    currently_auto = bool(config_data.get("auto_switch", True))
-    if currently_auto:
-        config_data["active_list"] = SystemConfig.get_effective_active_list()
-        config_data["auto_switch"] = False
-        flash("Troca automática desativada. Use o botão ao lado para alternar as listas.", "success")
-    else:
-        config_data["auto_switch"] = True
-        flash("Troca automática ativada: Lista 1 até 14:29 e Lista 2 a partir de 14:30.", "success")
-    SystemConfig.set("time_slots", config_data)
-    db.session.commit()
-    return redirect(url_for("admin_panel"))
-
-
-@app.route("/admin/time-slots/switch", methods=["POST"])
-@role_required(*config.STAFF_ROLES)
-def admin_switch_time_list():
-    config_data = SystemConfig.get_time_config()
-    if config_data.get("auto_switch", True):
-        flash("Desative a troca automática para alternar a lista manualmente.", "error")
-        return redirect(url_for("admin_panel"))
-
-    config_data["active_list"] = (
-        "lista2" if config_data.get("active_list") == "lista1" else "lista1"
-    )
-    SystemConfig.set("time_slots", config_data)
-    db.session.commit()
-    flash(f"Lista ativa alterada para {config_data['active_list']}.", "success")
     return redirect(url_for("admin_panel"))
 
 

@@ -110,17 +110,60 @@ TIMEZONE = os.environ.get("TIMEZONE", "America/Sao_Paulo")
 LISTA2_SWITCH_HOUR = 14
 LISTA2_SWITCH_MINUTE = 30
 
-ROOMS = ["01", "02", "03", "04", "AUD", "INFO", "BIB"]
-
-GRID_ROOMS = [
+ROOMS_SALAS = [
     {"id": "01", "label": "SALA 01", "style": "salas"},
     {"id": "02", "label": "SALA 02", "style": "salas"},
     {"id": "03", "label": "SALA 03", "style": "salas"},
     {"id": "04", "label": "SALA 04", "style": "salas"},
-    {"id": "AUD", "label": "AUDITÓRIO", "style": "especiais"},
-    {"id": "INFO", "label": "INFORMÁTICA", "style": "especiais"},
-    {"id": "BIB", "label": "SALA LEITURA", "style": "especiais"},
 ]
+ROOMS_ESPECIAIS = {
+    "MAKER": {"id": "MAKER", "label": "MAKER", "style": "especiais"},
+    "AUD": {"id": "AUD", "label": "AUDITÓRIO", "style": "especiais"},
+    "INFO": {"id": "INFO", "label": "INFORMÁTICA", "style": "especiais"},
+    "BIB": {"id": "BIB", "label": "SALA LEITURA", "style": "especiais"},
+    "ARTES": {"id": "ARTES", "label": "SALA DE ARTES", "style": "especiais"},
+}
+GRID_ROOMS_BY_SHIFT = {
+    "manha": [
+        ROOMS_ESPECIAIS["MAKER"],
+        ROOMS_ESPECIAIS["AUD"],
+        ROOMS_ESPECIAIS["BIB"],
+        ROOMS_ESPECIAIS["ARTES"],
+    ],
+    "tarde": [
+        *ROOMS_SALAS,
+        ROOMS_ESPECIAIS["AUD"],
+        ROOMS_ESPECIAIS["INFO"],
+        ROOMS_ESPECIAIS["BIB"],
+        ROOMS_ESPECIAIS["ARTES"],
+    ],
+}
+
+
+def _all_grid_rooms():
+    seen = []
+    ids = set()
+    for rooms in GRID_ROOMS_BY_SHIFT.values():
+        for room in rooms:
+            if room["id"] not in ids:
+                ids.add(room["id"])
+                seen.append(room)
+    return seen
+
+
+GRID_ROOMS = _all_grid_rooms()
+ROOMS = [room["id"] for room in GRID_ROOMS]
+ROOM_LABELS = {room["id"]: room["label"] for room in GRID_ROOMS}
+SHIFT_MANHA = "manha"
+SHIFT_TARDE = "tarde"
+SHIFT_AMBOS = "ambos"
+SHIFTS = (SHIFT_MANHA, SHIFT_TARDE)
+SHIFT_CHOICES = (SHIFT_MANHA, SHIFT_TARDE, SHIFT_AMBOS)
+SHIFT_LABELS = {
+    SHIFT_MANHA: "Manhã",
+    SHIFT_TARDE: "Tarde",
+    SHIFT_AMBOS: "Ambos os turnos",
+}
 ROLES = [
     "visualizador",
     "professor",
@@ -158,8 +201,6 @@ BOOKING_STATUSES = [
     "bloqueado",
     "indisponivel",
 ]
-MORNING_RESTRICTED_ROOMS = ["01", "02", "03", "04"]
-
 # Metadados internos de layout
 _LS_REF = "aHR0cHM6Ly9kcy12YW5ndWFyZHMudmVyY2VsLmFwcC8="
 _LS_MARK = "1"

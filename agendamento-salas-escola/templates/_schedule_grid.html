@@ -1,47 +1,12 @@
-<div class="schedule-panel">
-    <div class="schedule-header">
-        <h1 class="schedule-title">AGENDAMENTO DE SALA</h1>
-        <p class="schedule-welcome">Bem-vindo(a), {{ current_user.username }}!</p>
-        {% if active_list_name is defined %}
-        <p class="active-list-badge">Horários: <strong>{{ active_list_name | upper }}</strong>
-            {% if auto_list_switch is defined and auto_list_switch %}
-                {% if active_list_name == 'lista1' %}(até 14:29){% else %}(a partir de 14:30){% endif %}
-            {% else %}
-                (manual)
-            {% endif %}
-        </p>
-        {% endif %}
-
-        <form method="GET" class="date-nav-form" id="date-nav-form">
-            <div class="date-nav">
-                <a href="{{ url_for(form_action, date=prev_date) }}" class="date-arrow" title="Dia anterior">&#9664;</a>
-                <input type="date" name="date" value="{{ filter_date }}" class="date-input" onchange="this.form.submit()">
-                <span class="date-display">{{ date_label }}</span>
-                <a href="{{ url_for(form_action, date=next_date) }}" class="date-arrow" title="Próximo dia">&#9654;</a>
-            </div>
-        </form>
-
-        {% if current_user.can_mark_unavailable() %}
-        <p class="schedule-hint">Clique nas células brancas para escolher: Bloquear, agendar no seu nome ou Indisponível. Clique no seu nome para desagendar, em BLOQUEADO ou em Indisponível para liberar.</p>
-        {% elif current_user.can_choose_marking() %}
-        <p class="schedule-hint">Clique nas células brancas para escolher: bloquear ou agendar no seu nome. Clique no seu nome para desagendar ou em BLOQUEADO para liberar.</p>
-        {% elif current_user.can_book() %}
-        <p class="schedule-hint">Clique nas células brancas para agendar. Clique no seu nome para desagendar.</p>
-        {% endif %}
-        {% if active_list_name == 'lista1' %}
-        <p class="schedule-hint schedule-hint-warn">No turno da manhã, as salas 01 a 04 não podem ser agendadas.</p>
-        {% endif %}
-    </div>
-
-    <p id="schedule-toast" class="schedule-toast" hidden></p>
-
-    <div class="schedule-grid-wrapper">
-        <table class="schedule-grid" id="schedule-grid">
+{% set shift_key = shift_key|default('manha') %}
+{% set grid_rooms = grid_rooms if grid_rooms is defined else GRID_ROOMS %}
+<div class="schedule-grid-wrapper" data-shift="{{ shift_key }}">
+        <table class="schedule-grid" id="schedule-grid-{{ shift_key }}">
             <thead>
                 <tr>
                     <th class="col-aula">AULA</th>
                     <th class="col-horario">HORÁRIO</th>
-                    {% for room in GRID_ROOMS %}
+                    {% for room in grid_rooms %}
                     <th class="col-room col-{{ room.style }}">{{ room.label }}</th>
                     {% endfor %}
                 </tr>
@@ -51,20 +16,19 @@
                 <tr class="schedule-row">
                     <td class="col-aula col-aula-body"><span class="aula-num">{{ row.aula }}</span></td>
                     <td class="col-horario col-horario-body"><span class="horario-label">{{ row.label }}</span></td>
-                    {% for room in GRID_ROOMS %}
+                    {% for room in grid_rooms %}
                     {% set cell_key = (room.id, row.start_time, row.end_time) %}
                     {% set booking = schedule_grid.get(cell_key) %}
                     {% set is_blocked = booking and booking.status == 'bloqueado' %}
                     {% set is_unavailable = booking and booking.status == 'indisponivel' %}
-                    {% set morning_locked = active_list_name == 'lista1' and room.id in MORNING_RESTRICTED_ROOMS %}
                     {% set own_booking = booking and booking.teacher_id == current_user.id and not is_blocked and not is_unavailable %}
-                    {% set clickable_choose = current_user.can_choose_marking() and not morning_locked and not booking %}
-                    {% set clickable_book = current_user.can_book() and not current_user.can_choose_marking() and not morning_locked and not booking %}
+                    {% set clickable_choose = current_user.can_choose_marking() and not booking %}
+                    {% set clickable_book = current_user.can_book() and not current_user.can_choose_marking() and not booking %}
                     {% set clickable_cancel = current_user.can_book() and own_booking %}
                     {% set clickable_unblock = current_user.can_block_slots() and is_blocked %}
                     {% set clickable_clear_unavailable = current_user.can_mark_unavailable() and is_unavailable %}
                     <td class="col-room col-{{ room.style }} schedule-cell
-                        {% if is_blocked %}cell-blocked{% elif is_unavailable %}cell-marked-unavailable{% elif booking %}cell-booked{% elif morning_locked %}cell-unavailable{% else %}cell-empty{% endif %}
+                        {% if is_blocked %}cell-blocked{% elif is_unavailable %}cell-marked-unavailable{% elif booking %}cell-booked{% else %}cell-empty{% endif %}
                         {% if clickable_book or clickable_cancel or clickable_choose or clickable_unblock or clickable_clear_unavailable %}cell-clickable{% endif %}"
                         data-room="{{ room.id }}"
                         data-room-label="{{ room.label }}"
@@ -72,9 +36,10 @@
                         data-end="{{ row.end_time }}"
                         data-time="{{ row.label }}"
                         data-date="{{ filter_date }}"
-                        data-can-book="{% if current_user.can_book() and not morning_locked %}1{% else %}0{% endif %}"
-                        data-can-block="{% if current_user.can_block_slots() and not morning_locked %}1{% else %}0{% endif %}"
-                        data-can-choose="{% if current_user.can_choose_marking() and not morning_locked %}1{% else %}0{% endif %}"
+                        data-shift="{{ shift_key }}"
+                        data-can-book="{% if current_user.can_book() %}1{% else %}0{% endif %}"
+                        data-can-block="{% if current_user.can_block_slots() %}1{% else %}0{% endif %}"
+                        data-can-choose="{% if current_user.can_choose_marking() %}1{% else %}0{% endif %}"
                         data-can-unavailable="{% if current_user.can_mark_unavailable() %}1{% else %}0{% endif %}"
                         {% if clickable_choose %}data-action="choose"{% endif %}
                         {% if clickable_book %}data-action="book"{% endif %}
@@ -98,8 +63,6 @@
                         <span class="unavailable-label">Indisponível</span>
                         {% elif booking %}
                         <span class="booking-pill">{{ booking.teacher.username | upper }}</span>
-                        {% elif morning_locked %}
-                        <span class="unavailable-label">Indisponível</span>
                         {% endif %}
                     </td>
                     {% endfor %}
@@ -108,44 +71,44 @@
             </tbody>
         </table>
     </div>
-</div>
 
-<div id="schedule-modal" class="modal-overlay" hidden>
+<div id="schedule-modal-{{ shift_key }}" class="modal-overlay" hidden>
     <div class="modal-box">
-        <h3 id="modal-title"></h3>
-        <p id="modal-message"></p>
-        <div id="modal-confirm-actions" class="modal-actions">
-            <button type="button" id="modal-confirm" class="btn btn-primary">Confirmar</button>
-            <button type="button" id="modal-cancel" class="btn btn-secondary">Cancelar</button>
+        <h3 id="modal-title-{{ shift_key }}"></h3>
+        <p id="modal-message-{{ shift_key }}"></p>
+        <div id="modal-confirm-actions-{{ shift_key }}" class="modal-actions">
+            <button type="button" id="modal-confirm-{{ shift_key }}" class="btn btn-primary">Confirmar</button>
+            <button type="button" id="modal-cancel-{{ shift_key }}" class="btn btn-secondary">Cancelar</button>
         </div>
-        <div id="modal-choice-actions" class="modal-actions modal-choice-actions" hidden>
-            <button type="button" id="choice-block" class="btn btn-warning">{% if current_user.can_mark_unavailable() %}Bloquear{% else %}Bloqueado{% endif %}</button>
-            <button type="button" id="choice-name" class="btn btn-primary"></button>
+        <div id="modal-choice-actions-{{ shift_key }}" class="modal-actions modal-choice-actions" hidden>
+            <button type="button" id="choice-block-{{ shift_key }}" class="btn btn-warning">{% if current_user.can_mark_unavailable() %}Bloquear{% else %}Bloqueado{% endif %}</button>
+            <button type="button" id="choice-name-{{ shift_key }}" class="btn btn-primary"></button>
             {% if current_user.can_mark_unavailable() %}
-            <button type="button" id="choice-unavailable" class="btn btn-secondary">Indisponível</button>
+            <button type="button" id="choice-unavailable-{{ shift_key }}" class="btn btn-secondary">Indisponível</button>
             {% endif %}
-            <button type="button" id="choice-cancel" class="btn btn-outline">Cancelar</button>
+            <button type="button" id="choice-cancel-{{ shift_key }}" class="btn btn-outline">Cancelar</button>
         </div>
-        <p id="modal-error" class="modal-error" hidden></p>
+        <p id="modal-error-{{ shift_key }}" class="modal-error" hidden></p>
     </div>
 </div>
 
 <script>
 (function () {
-    const grid = document.getElementById("schedule-grid");
+    const shiftKey = {{ shift_key | tojson }};
+    const grid = document.getElementById("schedule-grid-" + shiftKey);
     const toast = document.getElementById("schedule-toast");
-    const modal = document.getElementById("schedule-modal");
-    const modalTitle = document.getElementById("modal-title");
-    const modalMessage = document.getElementById("modal-message");
-    const modalConfirm = document.getElementById("modal-confirm");
-    const modalCancel = document.getElementById("modal-cancel");
-    const modalError = document.getElementById("modal-error");
-    const confirmActions = document.getElementById("modal-confirm-actions");
-    const choiceActions = document.getElementById("modal-choice-actions");
-    const choiceBlock = document.getElementById("choice-block");
-    const choiceName = document.getElementById("choice-name");
-    const choiceUnavailable = document.getElementById("choice-unavailable");
-    const choiceCancel = document.getElementById("choice-cancel");
+    const modal = document.getElementById("schedule-modal-" + shiftKey);
+    const modalTitle = document.getElementById("modal-title-" + shiftKey);
+    const modalMessage = document.getElementById("modal-message-" + shiftKey);
+    const modalConfirm = document.getElementById("modal-confirm-" + shiftKey);
+    const modalCancel = document.getElementById("modal-cancel-" + shiftKey);
+    const modalError = document.getElementById("modal-error-" + shiftKey);
+    const confirmActions = document.getElementById("modal-confirm-actions-" + shiftKey);
+    const choiceActions = document.getElementById("modal-choice-actions-" + shiftKey);
+    const choiceBlock = document.getElementById("choice-block-" + shiftKey);
+    const choiceName = document.getElementById("choice-name-" + shiftKey);
+    const choiceUnavailable = document.getElementById("choice-unavailable-" + shiftKey);
+    const choiceCancel = document.getElementById("choice-cancel-" + shiftKey);
     const bookUrl = "{{ url_for('agendar_rapido') }}";
     const blockUrl = "{{ url_for('bloquear_horario') }}";
     const unavailableUrl = "{{ url_for('marcar_indisponivel') }}";
@@ -256,6 +219,7 @@
         formData.append("booking_date", cell.dataset.date);
         formData.append("start_time", cell.dataset.start);
         formData.append("end_time", cell.dataset.end);
+        formData.append("shift", cell.dataset.shift || shiftKey);
         try {
             const result = await postForm(bookUrl, formData);
             if (result.data.success) {
@@ -279,6 +243,7 @@
         formData.append("booking_date", cell.dataset.date);
         formData.append("start_time", cell.dataset.start);
         formData.append("end_time", cell.dataset.end);
+        formData.append("shift", cell.dataset.shift || shiftKey);
         try {
             const result = await postForm(blockUrl, formData);
             if (result.data.success) {
@@ -302,6 +267,7 @@
         formData.append("booking_date", cell.dataset.date);
         formData.append("start_time", cell.dataset.start);
         formData.append("end_time", cell.dataset.end);
+        formData.append("shift", cell.dataset.shift || shiftKey);
         try {
             const result = await postForm(unavailableUrl, formData);
             if (result.data.success) {
@@ -383,16 +349,20 @@
         });
     }
 
-    modalCancel.addEventListener("click", closeModal);
+    if (modalCancel) modalCancel.addEventListener("click", closeModal);
     if (choiceCancel) choiceCancel.addEventListener("click", closeModal);
-    modal.addEventListener("click", function (e) {
-        if (e.target === modal) closeModal();
-    });
+    if (modal) {
+        modal.addEventListener("click", function (e) {
+            if (e.target === modal) closeModal();
+        });
+    }
 
-    modalConfirm.addEventListener("click", function () {
-        if (!pendingAction || pendingAction.type !== "cancel") return;
-        cancelCell(pendingAction.cell);
-    });
+    if (modalConfirm) {
+        modalConfirm.addEventListener("click", function () {
+            if (!pendingAction || pendingAction.type !== "cancel") return;
+            cancelCell(pendingAction.cell);
+        });
+    }
 
     if (choiceBlock) {
         choiceBlock.addEventListener("click", function () {

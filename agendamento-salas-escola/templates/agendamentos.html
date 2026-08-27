@@ -5,7 +5,7 @@
 <div class="schedule-restricted">
     <div class="schedule-restricted-blur" aria-hidden="true">
         {% set form_action = 'agendamentos' %}
-        {% include '_schedule_grid.html' %}
+        {% include '_schedule_boards.html' %}
     </div>
     <div class="schedule-restricted-overlay">
         {% include '_acesso_negado.html' %}
@@ -15,6 +15,6 @@
 {% include '_detailed_table.html' %}
 {% else %}
 {% set form_action = 'agendamentos' %}
-{% include '_schedule_grid.html' %}
+{% include '_schedule_boards.html' %}
 {% endif %}
 {% endblock %}
