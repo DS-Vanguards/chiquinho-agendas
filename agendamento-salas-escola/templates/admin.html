@@ -101,7 +101,7 @@
                     <td>{{ u.username }}</td>
                     <td>{{ u.email }}</td>
                     <td><span class="badge badge-{{ u.role }}">{{ ROLE_LABELS.get(u.role, u.role) }}</span></td>
-                    <td><span class="badge badge-shift">{{ u.shift_label() }}</span></td>
+                    <td><span class="badge badge-shift badge-shift-{{ u.shift or 'none' }}">{{ u.shift_label() }}</span></td>
                     <td class="actions-cell">
                         {% if current_user.can_edit_user(u) %}
                         <button type="button" class="btn btn-sm btn-secondary js-open-role-panel"
@@ -206,11 +206,11 @@
     <form method="POST" action="{{ url_for('admin_update_time_slots') }}" class="form form-wide">
         <div class="form-row">
             <div class="form-group">
-                <label for="lista1">Manhã (um horário por linha)</label>
+                <label for="lista1">Turno 1 (um horário por linha)</label>
                 <textarea id="lista1" name="lista1" rows="8">{{ time_config.lista1 | join('\n') }}</textarea>
             </div>
             <div class="form-group">
-                <label for="lista2">Tarde (um horário por linha)</label>
+                <label for="lista2">Turno 2 (um horário por linha)</label>
                 <textarea id="lista2" name="lista2" rows="8">{{ time_config.lista2 | join('\n') }}</textarea>
             </div>
         </div>
@@ -218,8 +218,8 @@
     </form>
     {% else %}
     <div class="info-box">
-        <p><strong>Manhã:</strong> {{ time_config.lista1 | join(', ') }}</p>
-        <p><strong>Tarde:</strong> {{ time_config.lista2 | join(', ') }}</p>
+        <p><strong>Turno 1:</strong> {{ time_config.lista1 | join(', ') }}</p>
+        <p><strong>Turno 2:</strong> {{ time_config.lista2 | join(', ') }}</p>
     </div>
     {% endif %}
 </section>
@@ -316,15 +316,15 @@
             <div class="choice-options">
                 <label class="choice-option">
                     <input type="radio" name="shift" value="manha">
-                    <span>Manhã</span>
+                    <span>Turno 1</span>
                 </label>
                 <label class="choice-option">
                     <input type="radio" name="shift" value="tarde">
-                    <span>Tarde</span>
+                    <span>Turno 2</span>
                 </label>
                 <label class="choice-option">
                     <input type="radio" name="shift" value="ambos">
-                    <span>Ambos os turnos</span>
+                    <span>T1/T2</span>
                 </label>
             </div>
             <div class="modal-actions">

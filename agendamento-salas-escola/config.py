@@ -160,9 +160,9 @@ SHIFT_AMBOS = "ambos"
 SHIFTS = (SHIFT_MANHA, SHIFT_TARDE)
 SHIFT_CHOICES = (SHIFT_MANHA, SHIFT_TARDE, SHIFT_AMBOS)
 SHIFT_LABELS = {
-    SHIFT_MANHA: "Manhã",
-    SHIFT_TARDE: "Tarde",
-    SHIFT_AMBOS: "Ambos os turnos",
+    SHIFT_MANHA: "Turno 1",
+    SHIFT_TARDE: "Turno 2",
+    SHIFT_AMBOS: "T1/T2",
 }
 ROLES = [
     "visualizador",

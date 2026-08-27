@@ -340,6 +340,15 @@ h2 {
 .badge-coordenador { background: #ffedd5; color: #9a3412; }
 .badge-professor { background: #dbeafe; color: #1e40af; }
 .badge-visualizador { background: #f1f5f9; color: #475569; }
+.badge-shift,
+.badge-shift-manha,
+.badge-shift-tarde,
+.badge-shift-ambos,
+.badge-shift-none {
+    background: #e0f2fe;
+    color: #075985;
+    text-transform: none;
+}
 
 .badge-status { text-transform: capitalize; }
 .badge-pendente { background: #fef9c3; color: #854d0e; }
@@ -1110,12 +1119,6 @@ h2 {
 
 .schedule-stack .schedule-grid-wrapper {
     margin-top: 0.75rem;
-}
-
-.badge-shift {
-    background: #e0f2fe;
-    color: #075985;
-    text-transform: none;
 }
 
 .choice-panel {

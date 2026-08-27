@@ -551,7 +551,7 @@ def escolher_turno():
             return render_template("escolher_turno.html")
         current_user.shift = shift
         db.session.commit()
-        flash(f"Turno {config.SHIFT_LABELS[shift]} definido.", "success")
+        flash(f"{config.SHIFT_LABELS[shift]} definido.", "success")
         return redirect(url_for("agendamentos"))
 
     return render_template("escolher_turno.html")

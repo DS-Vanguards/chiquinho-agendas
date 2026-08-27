@@ -34,7 +34,7 @@
     {% set schedule_rows = view.schedule_rows %}
     {% set schedule_grid = view.schedule_grid %}
     {% if schedule_views|length > 1 %}
-    <h2 class="shift-board-title">Turno {{ view.shift_label }}</h2>
+    <h2 class="shift-board-title">{{ view.shift_label }}</h2>
     {% endif %}
     {% include '_schedule_grid.html' %}
     {% endfor %}
