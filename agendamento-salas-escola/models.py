@@ -244,6 +244,14 @@ class SystemConfig(db.Model):
             config = {}
         config.setdefault("lista1", list(DEFAULT_TIME_LIST_1))
         config.setdefault("lista2", list(DEFAULT_TIME_LIST_2))
+        lista2 = config.get("lista2") or []
+        if not any(
+            " - " in str(item) or str(item).strip().lower() == "intervalo"
+            for item in lista2
+        ):
+            config["lista2"] = list(DEFAULT_TIME_LIST_2)
+            SystemConfig.set("time_slots", config)
+            db.session.commit()
         return config
 
     @staticmethod

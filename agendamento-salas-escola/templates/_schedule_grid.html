@@ -13,6 +13,15 @@
             </thead>
             <tbody>
                 {% for row in schedule_rows %}
+                {% if row.kind == 'intervalo' %}
+                <tr class="schedule-row schedule-row-break">
+                    <td class="col-aula col-aula-body"></td>
+                    <td class="col-horario col-horario-body"><span class="horario-label">Intervalo</span></td>
+                    {% for room in grid_rooms %}
+                    <td class="col-room col-{{ room.style }} schedule-cell cell-interval"></td>
+                    {% endfor %}
+                </tr>
+                {% else %}
                 <tr class="schedule-row">
                     <td class="col-aula col-aula-body"><span class="aula-num">{{ row.aula }}</span></td>
                     <td class="col-horario col-horario-body"><span class="horario-label">{{ row.label }}</span></td>
@@ -67,6 +76,7 @@
                     </td>
                     {% endfor %}
                 </tr>
+                {% endif %}
                 {% endfor %}
             </tbody>
         </table>

@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -366,18 +367,78 @@ def format_date_label(selected: date) -> str:
     return f"{selected.strftime('%d/%m/%Y')} {weekday}"
 
 
-def build_shift_context(selected_date: date, shift: str):
-    time_slots = SystemConfig.get_time_slots_for_shift(shift)
+def _normalize_hhmm(value: str) -> str:
+    parts = value.strip().split(":")
+    return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+
+
+def parse_shift_rows(lines) -> list:
+    items = [str(item).strip() for item in (lines or []) if str(item).strip()]
+    if not items:
+        return []
+
+    if all(re.fullmatch(r"\d{1,2}:\d{2}", item) for item in items):
+        rows = []
+        aula = 0
+        for index in range(len(items) - 1):
+            start = _normalize_hhmm(items[index])
+            end = _normalize_hhmm(items[index + 1])
+            if start >= end:
+                continue
+            aula += 1
+            rows.append(
+                {
+                    "kind": "aula",
+                    "aula": aula,
+                    "start_time": start,
+                    "end_time": end,
+                    "label": f"{start} - {end}",
+                }
+            )
+        return rows
+
     rows = []
-    for index in range(len(time_slots) - 1):
+    aula = 0
+    range_re = re.compile(r"^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$")
+    for item in items:
+        if item.lower() == "intervalo":
+            rows.append(
+                {
+                    "kind": "intervalo",
+                    "aula": "",
+                    "start_time": "",
+                    "end_time": "",
+                    "label": "Intervalo",
+                }
+            )
+            continue
+        match = range_re.match(item)
+        if not match:
+            continue
+        start = _normalize_hhmm(match.group(1))
+        end = _normalize_hhmm(match.group(2))
+        if start >= end:
+            continue
+        aula += 1
         rows.append(
             {
-                "aula": index + 1,
-                "start_time": time_slots[index],
-                "end_time": time_slots[index + 1],
-                "label": f"{time_slots[index]} - {time_slots[index + 1]}",
+                "kind": "aula",
+                "aula": aula,
+                "start_time": start,
+                "end_time": end,
+                "label": f"{start} - {end}",
             }
         )
+    return rows
+
+
+def periods_for_shift(shift: str) -> list:
+    rows = parse_shift_rows(SystemConfig.get_time_slots_for_shift(shift))
+    return [(row["start_time"], row["end_time"]) for row in rows if row["kind"] == "aula"]
+
+
+def build_shift_context(selected_date: date, shift: str):
+    rows = parse_shift_rows(SystemConfig.get_time_slots_for_shift(shift))
 
     bookings = Booking.query.filter_by(booking_date=selected_date).all()
     grid = {}
@@ -414,10 +475,8 @@ def create_booking(room, booking_date, start_time, end_time, teacher_id, status=
     if shift not in config.SHIFTS:
         shift = None
         for candidate in config.SHIFTS:
-            slots = SystemConfig.get_time_slots_for_shift(candidate)
             if (
-                start_time in slots
-                and end_time in slots
+                (start_time, end_time) in periods_for_shift(candidate)
                 and room in rooms_for_shift(candidate)
             ):
                 shift = candidate
@@ -427,7 +486,7 @@ def create_booking(room, booking_date, start_time, end_time, teacher_id, status=
     if not user_can_use_shift(current_user, shift):
         return False, "Você não pode agendar neste turno.", None
 
-    time_slots = SystemConfig.get_time_slots_for_shift(shift)
+    periods = periods_for_shift(shift)
     allowed_rooms = rooms_for_shift(shift)
 
     if room not in allowed_rooms:
@@ -436,10 +495,8 @@ def create_booking(room, booking_date, start_time, end_time, teacher_id, status=
         return False, "Data inválida.", None
     if booking_date < date.today():
         return False, "Não é possível agendar em datas passadas.", None
-    if start_time not in time_slots or end_time not in time_slots:
+    if (start_time, end_time) not in periods:
         return False, "Horário inválido.", None
-    if start_time >= end_time:
-        return False, "O horário final deve ser posterior ao inicial.", None
 
     query = Booking.query.filter_by(room=room, booking_date=booking_date)
     if db.engine.dialect.name != "sqlite":
@@ -1169,8 +1226,8 @@ def admin_update_time_slots():
     lista1 = parse_times(lista1_raw)
     lista2 = parse_times(lista2_raw)
 
-    if not lista1 or not lista2:
-        flash("Ambas as listas devem ter pelo menos um horário.", "error")
+    if not parse_shift_rows(lista1) or not parse_shift_rows(lista2):
+        flash("Cada turno precisa ter pelo menos um horário de aula válido.", "error")
         return redirect(url_for("admin_panel"))
 
     config_data = SystemConfig.get_time_config()

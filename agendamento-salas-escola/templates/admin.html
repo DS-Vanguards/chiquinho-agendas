@@ -199,18 +199,19 @@
     <h2>Horários</h2>
     <p class="text-muted">
         Cada professor vê a agenda do turno escolhido no primeiro acesso.
-        A troca automática por horário do dia foi substituída por isso.
+        Um período por linha, no formato <strong>14:40 - 15:30</strong>.
+        Escreva <strong>Intervalo</strong> para o recreio — essa linha não pode ser agendada.
     </p>
 
     {% if is_admin %}
     <form method="POST" action="{{ url_for('admin_update_time_slots') }}" class="form form-wide">
         <div class="form-row">
             <div class="form-group">
-                <label for="lista1">Turno 1 (um horário por linha)</label>
+                <label for="lista1">Turno 1 (um período por linha)</label>
                 <textarea id="lista1" name="lista1" rows="8">{{ time_config.lista1 | join('\n') }}</textarea>
             </div>
             <div class="form-group">
-                <label for="lista2">Turno 2 (um horário por linha)</label>
+                <label for="lista2">Turno 2 (um período por linha)</label>
                 <textarea id="lista2" name="lista2" rows="8">{{ time_config.lista2 | join('\n') }}</textarea>
             </div>
         </div>

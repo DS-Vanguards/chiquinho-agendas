@@ -728,6 +728,25 @@ h2 {
     color: #78350f;
 }
 
+.schedule-row-break .col-aula-body,
+.schedule-row-break .col-horario-body,
+.schedule-row-break .schedule-cell.cell-interval {
+    background: repeating-linear-gradient(
+        135deg,
+        #e2e8f0,
+        #e2e8f0 6px,
+        #f1f5f9 6px,
+        #f1f5f9 12px
+    ) !important;
+    cursor: default;
+}
+
+.schedule-row-break .horario-label {
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
 .schedule-row:nth-child(even) .schedule-cell {
     background: #f8fafc;
 }
