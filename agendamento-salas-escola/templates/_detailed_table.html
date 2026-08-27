@@ -13,34 +13,58 @@
         </form>
     </div>
 
-    {% if bookings %}
-    <div class="table-wrapper">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Sala</th>
-                    <th>Data</th>
-                    <th>Início</th>
-                    <th>Fim</th>
-                    <th>Professor</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for b in bookings %}
-                <tr>
-                    <td><strong>{{ ROOM_LABELS.get(b.room, b.room) }}</strong></td>
-                    <td><strong>{{ b.booking_date.strftime('%d/%m/%Y') }}</strong></td>
-                    <td><strong>{{ b.start_time }}</strong></td>
-                    <td><strong>{{ b.end_time }}</strong></td>
-                    <td><strong>{{ b.teacher.username }}</strong></td>
-                    <td><span class="badge badge-status badge-{{ b.status }}">{{ b.status }}</span></td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% else %}
-    <p class="empty-state">Nenhum agendamento encontrado para esta data.</p>
-    {% endif %}
+    {% macro detailed_shift_table(title, items) %}
+    <section class="detailed-shift-section">
+        <h2 class="shift-board-title">{{ title }}</h2>
+        {% if items %}
+        <div class="table-wrapper detailed-bookings-scroll" data-visible-rows="4">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Sala</th>
+                        <th>Data</th>
+                        <th>Início</th>
+                        <th>Fim</th>
+                        <th>Professor</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for b in items %}
+                    <tr>
+                        <td><strong>{{ ROOM_LABELS.get(b.room, b.room) }}</strong></td>
+                        <td><strong>{{ b.booking_date.strftime('%d/%m/%Y') }}</strong></td>
+                        <td><strong>{{ b.start_time }}</strong></td>
+                        <td><strong>{{ b.end_time }}</strong></td>
+                        <td><strong>{{ b.teacher.username }}</strong></td>
+                        <td><span class="badge badge-status badge-{{ b.status }}">{{ b.status }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="empty-state">Nenhum agendamento encontrado para este turno nesta data.</p>
+        {% endif %}
+    </section>
+    {% endmacro %}
+
+    {{ detailed_shift_table(SHIFT_LABELS.get('manha', 'Turno 1'), bookings_manha|default([])) }}
+    {{ detailed_shift_table(SHIFT_LABELS.get('tarde', 'Turno 2'), bookings_tarde|default([])) }}
 </div>
+<script>
+(function () {
+    document.querySelectorAll(".detailed-bookings-scroll").forEach(function (wrap) {
+        const table = wrap.querySelector(".data-table");
+        if (!table || !table.tHead || !table.tBodies[0]) return;
+        const rows = table.tBodies[0].rows;
+        const visible = Number(wrap.dataset.visibleRows || 4);
+        if (rows.length <= visible) return;
+        let height = table.tHead.offsetHeight;
+        for (let i = 0; i < visible; i++) {
+            height += rows[i].offsetHeight;
+        }
+        wrap.style.maxHeight = height + "px";
+    });
+})();
+</script>

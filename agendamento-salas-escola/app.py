@@ -437,6 +437,38 @@ def periods_for_shift(shift: str) -> list:
     return [(row["start_time"], row["end_time"]) for row in rows if row["kind"] == "aula"]
 
 
+def classify_booking_shift(booking) -> str:
+    key = (booking.start_time, booking.end_time)
+    manha_periods = set(periods_for_shift("manha"))
+    tarde_periods = set(periods_for_shift("tarde"))
+    in_manha = key in manha_periods
+    in_tarde = key in tarde_periods
+    if in_manha and not in_tarde:
+        return "manha"
+    if in_tarde and not in_manha:
+        return "tarde"
+    rooms_manha = set(rooms_for_shift("manha"))
+    rooms_tarde = set(rooms_for_shift("tarde"))
+    if booking.room in rooms_tarde and booking.room not in rooms_manha:
+        return "tarde"
+    if booking.room in rooms_manha and booking.room not in rooms_tarde:
+        return "manha"
+    if in_tarde:
+        return "tarde"
+    return "manha"
+
+
+def split_bookings_by_shift(bookings):
+    manha = []
+    tarde = []
+    for booking in bookings:
+        if classify_booking_shift(booking) == "tarde":
+            tarde.append(booking)
+        else:
+            manha.append(booking)
+    return manha, tarde
+
+
 def build_shift_context(selected_date: date, shift: str):
     rows = parse_shift_rows(SystemConfig.get_time_slots_for_shift(shift))
 
@@ -812,13 +844,15 @@ def agendamentos():
     ):
         query = Booking.query.filter_by(booking_date=selected_date)
         bookings = query.order_by(Booking.start_time, Booking.room).all()
+        bookings_manha, bookings_tarde = split_bookings_by_shift(bookings)
         prev_date = (selected_date - timedelta(days=1)).isoformat()
         next_date = (selected_date + timedelta(days=1)).isoformat()
 
         return render_template(
             "agendamentos.html",
             view_mode="detailed",
-            bookings=bookings,
+            bookings_manha=bookings_manha,
+            bookings_tarde=bookings_tarde,
             filter_date=selected_date.isoformat(),
             date_label=format_date_label(selected_date),
             prev_date=prev_date,

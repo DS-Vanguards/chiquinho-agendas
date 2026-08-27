@@ -1,6 +1,6 @@
 {% set shift_key = shift_key|default('manha') %}
 {% set grid_rooms = grid_rooms if grid_rooms is defined else GRID_ROOMS %}
-<div class="schedule-grid-wrapper" data-shift="{{ shift_key }}">
+<div class="schedule-grid-wrapper" data-shift="{{ shift_key }}" data-visible-rows="4">
         <table class="schedule-grid" id="schedule-grid-{{ shift_key }}">
             <thead>
                 <tr>
@@ -86,17 +86,17 @@
     <div class="modal-box">
         <h3 id="modal-title-{{ shift_key }}"></h3>
         <p id="modal-message-{{ shift_key }}"></p>
-        <div id="modal-confirm-actions-{{ shift_key }}" class="modal-actions">
+        <div id="modal-confirm-actions-{{ shift_key }}" class="modal-actions" hidden>
             <button type="button" id="modal-confirm-{{ shift_key }}" class="btn btn-primary">Confirmar</button>
             <button type="button" id="modal-cancel-{{ shift_key }}" class="btn btn-secondary">Cancelar</button>
         </div>
         <div id="modal-choice-actions-{{ shift_key }}" class="modal-actions modal-choice-actions" hidden>
             <button type="button" id="choice-block-{{ shift_key }}" class="btn btn-warning">{% if current_user.can_mark_unavailable() %}Bloquear{% else %}Bloqueado{% endif %}</button>
             <button type="button" id="choice-name-{{ shift_key }}" class="btn btn-primary"></button>
+            <button type="button" id="choice-cancel-{{ shift_key }}" class="btn btn-secondary choice-cancel">Cancelar</button>
             {% if current_user.can_mark_unavailable() %}
             <button type="button" id="choice-unavailable-{{ shift_key }}" class="btn btn-secondary">Indisponível</button>
             {% endif %}
-            <button type="button" id="choice-cancel-{{ shift_key }}" class="btn btn-outline">Cancelar</button>
         </div>
         <p id="modal-error-{{ shift_key }}" class="modal-error" hidden></p>
     </div>
@@ -398,5 +398,18 @@
             markUnavailableCell(cell);
         });
     }
+
+    (function limitVisibleRows() {
+        const wrap = grid && grid.closest(".schedule-grid-wrapper");
+        if (!wrap || !grid.tHead || !grid.tBodies[0]) return;
+        const rows = grid.tBodies[0].rows;
+        const visible = Number(wrap.dataset.visibleRows || 4);
+        if (rows.length <= visible) return;
+        let height = grid.tHead.offsetHeight;
+        for (let i = 0; i < visible; i++) {
+            height += rows[i].offsetHeight;
+        }
+        wrap.style.maxHeight = height + "px";
+    })();
 })();
 </script>
