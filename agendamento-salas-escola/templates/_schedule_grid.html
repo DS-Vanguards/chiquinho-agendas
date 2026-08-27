@@ -1,6 +1,6 @@
 {% set shift_key = shift_key|default('manha') %}
 {% set grid_rooms = grid_rooms if grid_rooms is defined else GRID_ROOMS %}
-<div class="schedule-grid-wrapper" data-shift="{{ shift_key }}" data-visible-rows="4">
+<div class="schedule-grid-wrapper" data-shift="{{ shift_key }}">
         <table class="schedule-grid" id="schedule-grid-{{ shift_key }}">
             <thead>
                 <tr>
@@ -398,18 +398,5 @@
             markUnavailableCell(cell);
         });
     }
-
-    (function limitVisibleRows() {
-        const wrap = grid && grid.closest(".schedule-grid-wrapper");
-        if (!wrap || !grid.tHead || !grid.tBodies[0]) return;
-        const rows = grid.tBodies[0].rows;
-        const visible = Number(wrap.dataset.visibleRows || 4);
-        if (rows.length <= visible) return;
-        let height = grid.tHead.offsetHeight;
-        for (let i = 0; i < visible; i++) {
-            height += rows[i].offsetHeight;
-        }
-        wrap.style.maxHeight = height + "px";
-    })();
 })();
 </script>
