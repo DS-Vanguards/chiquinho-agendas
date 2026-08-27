@@ -1030,6 +1030,9 @@ def admin_update_shift(user_id):
     db.session.commit()
     flash(f"Turno de {user.username} atualizado para {config.SHIFT_LABELS[shift]}.", "success")
     return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/users/add", methods=["POST"])
 @role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_add_user():
     username = request.form.get("username", "").strip()[:80]
