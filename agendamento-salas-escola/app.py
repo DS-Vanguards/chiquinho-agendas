@@ -271,7 +271,7 @@ def get_home_endpoint(user=None) -> str:
     user = user or current_user
     if user.is_authenticated and user.needs_shift_choice():
         return "escolher_turno"
-    if user.is_authenticated and user.uses_assigned_shift():
+    if user.is_authenticated and user.is_professor:
         return "agendamentos"
     return "dashboard"
 
@@ -655,7 +655,7 @@ def login():
 @login_required
 def escolher_turno():
     if not current_user.needs_shift_choice():
-        return redirect(url_for("agendamentos" if current_user.uses_assigned_shift() else "dashboard"))
+        return redirect(url_for("agendamentos" if current_user.is_professor else "dashboard"))
 
     if request.method == "POST":
         shift = request.form.get("shift", "")
@@ -665,7 +665,7 @@ def escolher_turno():
         current_user.shift = shift
         db.session.commit()
         flash(f"{config.SHIFT_LABELS[shift]} definido.", "success")
-        return redirect(url_for("agendamentos"))
+        return redirect(url_for(get_home_endpoint(current_user)))
 
     return render_template("escolher_turno.html")
 
@@ -817,7 +817,7 @@ def logout():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    if current_user.uses_assigned_shift():
+    if current_user.is_professor:
         return redirect(url_for("agendamentos"))
 
     if current_user.is_visualizador:
@@ -830,6 +830,7 @@ def dashboard():
         "vgs_owner",
         "moderador",
         "coordenador",
+        "inspetor",
     ):
         selected_date = get_selected_date(request.args.get("date"))
         context = build_schedule_context(selected_date)
@@ -870,22 +871,13 @@ def agendamentos():
         query = Booking.query.filter_by(booking_date=selected_date)
         bookings = query.order_by(Booking.start_time, Booking.room).all()
         bookings_manha, bookings_tarde = split_bookings_by_shift(bookings)
-        visible = current_user.visible_shifts()
+        detailed_shifts = ["manha", "tarde"]
         if current_user.is_inspetor:
-            if "manha" not in visible:
+            detailed_shifts = current_user.visible_shifts()
+            if "manha" not in detailed_shifts:
                 bookings_manha = []
-            if "tarde" not in visible:
+            if "tarde" not in detailed_shifts:
                 bookings_tarde = []
-            context = build_schedule_context(selected_date)
-            return render_template(
-                "agendamentos.html",
-                view_mode="inspetor",
-                bookings_manha=bookings_manha,
-                bookings_tarde=bookings_tarde,
-                detailed_shifts=visible,
-                hide_detailed_header=True,
-                **context,
-            )
         prev_date = (selected_date - timedelta(days=1)).isoformat()
         next_date = (selected_date + timedelta(days=1)).isoformat()
 
@@ -894,6 +886,7 @@ def agendamentos():
             view_mode="detailed",
             bookings_manha=bookings_manha,
             bookings_tarde=bookings_tarde,
+            detailed_shifts=detailed_shifts,
             filter_date=selected_date.isoformat(),
             date_label=format_date_label(selected_date),
             prev_date=prev_date,
