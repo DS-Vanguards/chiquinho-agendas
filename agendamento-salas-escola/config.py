@@ -138,7 +138,6 @@ GRID_ROOMS_BY_SHIFT = {
         ROOMS_ESPECIAIS["ARTES"],
     ],
     "tarde": [
-        *ROOMS_SALAS,
         ROOMS_ESPECIAIS["AUD"],
         ROOMS_ESPECIAIS["INFO"],
         ROOMS_ESPECIAIS["BIB"],
@@ -161,6 +160,7 @@ def _all_grid_rooms():
 GRID_ROOMS = _all_grid_rooms()
 ROOMS = [room["id"] for room in GRID_ROOMS]
 ROOM_LABELS = {room["id"]: room["label"] for room in GRID_ROOMS}
+ROOM_LABELS.update({room["id"]: room["label"] for room in ROOMS_SALAS})
 SHIFT_MANHA = "manha"
 SHIFT_TARDE = "tarde"
 SHIFT_AMBOS = "ambos"
