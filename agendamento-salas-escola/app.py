@@ -1186,6 +1186,44 @@ def admin_delete_all_bookings():
     return redirect(url_for("admin_panel"))
 
 
+@app.route("/admin/bookings/delete-by-date", methods=["POST"])
+@role_required(*config.ADMIN_ACCESS_ROLES)
+def admin_delete_bookings_by_date():
+    mode = (request.form.get("mode") or "single").strip()
+    start = parse_booking_date(request.form.get("date_start", ""))
+    end = parse_booking_date(request.form.get("date_end", ""))
+
+    if mode != "range":
+        if not start:
+            flash("Escolha a data dos agendamentos que deseja excluir.", "error")
+            return redirect(url_for("admin_panel"))
+        end = start
+    else:
+        if not start or not end:
+            flash("Escolha a data inicial e a data final.", "error")
+            return redirect(url_for("admin_panel"))
+        if start > end:
+            start, end = end, start
+
+    deleted = Booking.query.filter(
+        Booking.booking_date >= start,
+        Booking.booking_date <= end,
+    ).delete(synchronize_session=False)
+    db.session.commit()
+
+    if start == end:
+        flash(
+            f"{deleted} agendamento(s) do dia {start.strftime('%d/%m/%Y')} foram excluídos.",
+            "success",
+        )
+    else:
+        flash(
+            f"{deleted} agendamento(s) de {start.strftime('%d/%m/%Y')} até {end.strftime('%d/%m/%Y')} foram excluídos.",
+            "success",
+        )
+    return redirect(url_for("admin_panel"))
+
+
 @app.route("/admin/users/<int:user_id>/role", methods=["POST"])
 @role_required(*config.ADMIN_ACCESS_ROLES)
 def admin_update_role(user_id):

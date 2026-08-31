@@ -6,10 +6,13 @@
 <section class="admin-section">
     <h2>Agendamentos</h2>
     {% if is_admin %}
-    <form method="POST" action="{{ url_for('admin_delete_all_bookings') }}" class="inline-form danger-zone"
-          onsubmit="return confirm('Tem certeza que deseja excluir TODOS os agendamentos?');">
-        <button type="submit" class="btn btn-danger">Excluir todos os agendamentos</button>
-    </form>
+    <div class="admin-booking-actions">
+        <button type="button" class="btn btn-warning" id="js-open-delete-dates">Excluir agendamentos</button>
+        <form method="POST" action="{{ url_for('admin_delete_all_bookings') }}" class="inline-form danger-zone"
+              onsubmit="return confirm('Tem certeza que deseja excluir TODOS os agendamentos?');">
+            <button type="submit" class="btn btn-danger">Excluir todos os agendamentos</button>
+        </form>
+    </div>
     {% endif %}
 
     <div data-live-admin-bookings>
@@ -257,6 +260,39 @@
 {% endif %}
 
 {% if is_admin %}
+<div id="delete-dates-panel" class="modal-overlay" hidden>
+    <div class="modal-box delete-dates-panel" role="dialog" aria-labelledby="delete-dates-title">
+        <h3 id="delete-dates-title">Excluir agendamentos</h3>
+        <p>Escolha uma data ou um intervalo para apagar os agendamentos.</p>
+        <form id="delete-dates-form" method="POST" action="{{ url_for('admin_delete_bookings_by_date') }}" class="form">
+            <div class="choice-options">
+                <label class="choice-option">
+                    <input type="radio" name="mode" value="single" checked>
+                    <span>Apenas uma data</span>
+                </label>
+                <label class="choice-option">
+                    <input type="radio" name="mode" value="range">
+                    <span>Da data X até a data Y</span>
+                </label>
+            </div>
+            <div class="delete-dates-fields">
+                <label for="delete-date-start" id="delete-date-start-label">Data</label>
+                <input type="date" id="delete-date-start" name="date_start" required>
+                <div id="delete-dates-end-wrap" hidden>
+                    <label for="delete-date-end">Data final</label>
+                    <input type="date" id="delete-date-end" name="date_end">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" id="delete-dates-cancel" class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-danger">Excluir</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% if is_admin %}
 <div id="add-user-panel" class="modal-overlay" hidden>
     <div class="modal-box add-user-panel" role="dialog" aria-labelledby="add-user-title">
         <h3 id="add-user-title">Criar Conta</h3>
@@ -414,6 +450,80 @@
     openBtn.addEventListener("click", function () {
         panel.hidden = false;
         if (username) username.focus();
+    });
+    if (cancel) cancel.addEventListener("click", closePanel);
+    panel.addEventListener("click", function (e) {
+        if (e.target === panel) closePanel();
+    });
+})();
+
+(function () {
+    const panel = document.getElementById("delete-dates-panel");
+    const form = document.getElementById("delete-dates-form");
+    const openBtn = document.getElementById("js-open-delete-dates");
+    const cancel = document.getElementById("delete-dates-cancel");
+    const startInput = document.getElementById("delete-date-start");
+    const endInput = document.getElementById("delete-date-end");
+    const endWrap = document.getElementById("delete-dates-end-wrap");
+    const startLabel = document.getElementById("delete-date-start-label");
+    if (!panel || !form || !openBtn) return;
+
+    function selectedMode() {
+        const checked = form.querySelector('input[name="mode"]:checked');
+        return checked ? checked.value : "single";
+    }
+
+    function formatDate(value) {
+        if (!value) return "";
+        const parts = value.split("-");
+        if (parts.length !== 3) return value;
+        return parts[2] + "/" + parts[1] + "/" + parts[0];
+    }
+
+    function syncMode() {
+        const isRange = selectedMode() === "range";
+        if (endWrap) endWrap.hidden = !isRange;
+        if (startLabel) startLabel.textContent = isRange ? "Data inicial" : "Data";
+        if (endInput) {
+            endInput.required = isRange;
+            if (!isRange) endInput.value = "";
+        }
+    }
+
+    function closePanel() {
+        panel.hidden = true;
+        form.reset();
+        syncMode();
+    }
+
+    openBtn.addEventListener("click", function () {
+        form.reset();
+        syncMode();
+        panel.hidden = false;
+        if (startInput) startInput.focus();
+    });
+    form.querySelectorAll('input[name="mode"]').forEach(function (input) {
+        input.addEventListener("change", syncMode);
+    });
+    form.addEventListener("submit", function (event) {
+        const start = startInput ? startInput.value : "";
+        const end = endInput ? endInput.value : "";
+        const isRange = selectedMode() === "range";
+        let message;
+        if (isRange) {
+            if (!start || !end) {
+                event.preventDefault();
+                return;
+            }
+            message = "Excluir todos os agendamentos de " + formatDate(start) + " até " + formatDate(end) + "?";
+        } else {
+            if (!start) {
+                event.preventDefault();
+                return;
+            }
+            message = "Excluir todos os agendamentos do dia " + formatDate(start) + "?";
+        }
+        if (!confirm(message)) event.preventDefault();
     });
     if (cancel) cancel.addEventListener("click", closePanel);
     panel.addEventListener("click", function (e) {

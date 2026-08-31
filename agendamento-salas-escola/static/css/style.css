@@ -467,7 +467,29 @@ h2 {
 }
 
 .danger-zone {
+    margin-bottom: 0;
+}
+
+.admin-booking-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
     margin-bottom: 1rem;
+}
+
+.delete-dates-panel {
+    max-width: 460px;
+}
+
+.delete-dates-fields {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0.5rem 0 1rem;
+}
+
+.delete-dates-fields [hidden] {
+    display: none !important;
 }
 
 .info-box {
