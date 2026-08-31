@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import re
 import threading
@@ -467,6 +469,28 @@ def split_bookings_by_shift(bookings):
         else:
             manha.append(booking)
     return manha, tarde
+
+
+def _live_revision(payload) -> str:
+    raw = json.dumps(payload, default=str, sort_keys=True, separators=(",", ":"))
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:20]
+
+
+def serialize_live_booking(booking) -> dict:
+    teacher = getattr(booking, "teacher", None)
+    return {
+        "id": booking.id,
+        "room": booking.room,
+        "room_label": config.ROOM_LABELS.get(booking.room, booking.room),
+        "booking_date": booking.booking_date.isoformat() if booking.booking_date else "",
+        "date_label": booking.booking_date.strftime("%d/%m/%Y") if booking.booking_date else "",
+        "start_time": booking.start_time,
+        "end_time": booking.end_time,
+        "status": booking.status,
+        "username": teacher.username if teacher else "",
+        "teacher_id": booking.teacher_id,
+        "shift": classify_booking_shift(booking),
+    }
 
 
 def build_shift_context(selected_date: date, shift: str):
@@ -987,6 +1011,96 @@ def desbloquear_horario(booking_id):
     db.session.delete(booking)
     db.session.commit()
     return jsonify({"success": True, "message": message})
+
+
+@app.route("/live/agenda")
+@login_required
+def live_agenda():
+    if not current_user.can_view_bookings():
+        return jsonify({"success": False, "message": "Sem permissão."}), 403
+    if too_many_requests("live-agenda", 90, 60):
+        return jsonify({"unchanged": True}), 200
+
+    selected_date = get_selected_date(request.args.get("date"))
+    bookings = (
+        Booking.query.filter_by(booking_date=selected_date)
+        .order_by(Booking.start_time, Booking.room)
+        .all()
+    )
+    items = [serialize_live_booking(b) for b in bookings]
+    manha = [b for b in items if b["shift"] != "tarde"]
+    tarde = [b for b in items if b["shift"] == "tarde"]
+    revision = _live_revision(items)
+    if request.args.get("rev") == revision:
+        return jsonify({"unchanged": True, "revision": revision})
+    return jsonify(
+        {
+            "unchanged": False,
+            "revision": revision,
+            "date": selected_date.isoformat(),
+            "bookings": items,
+            "bookings_manha": manha,
+            "bookings_tarde": tarde,
+        }
+    )
+
+
+@app.route("/live/admin")
+@login_required
+@role_required(*config.STAFF_ROLES)
+def live_admin():
+    if too_many_requests("live-admin", 90, 60):
+        return jsonify({"unchanged": True}), 200
+
+    bookings = Booking.query.order_by(
+        Booking.booking_date.desc(), Booking.start_time
+    ).all()
+    users = User.query.order_by(User.username).all()
+    machines = (
+        MachineGuard.query.filter(
+            MachineGuard.locked_until != None,  # noqa: E711
+            MachineGuard.locked_until > datetime.utcnow(),
+        )
+        .order_by(MachineGuard.locked_until.desc())
+        .all()
+    )
+    is_admin = current_user.has_admin_access()
+    payload = {
+        "is_admin": is_admin,
+        "statuses": list(config.BOOKING_STATUSES),
+        "bookings": [serialize_live_booking(b) for b in bookings],
+        "users": [
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "role": user.role,
+                "role_label": config.ROLE_LABELS.get(user.role, user.role),
+                "shift": user.shift or "",
+                "shift_label": user.shift_label(),
+                "can_edit": current_user.can_edit_user(user),
+                "can_reset": current_user.can_reset_user(user),
+            }
+            for user in users
+        ],
+        "machines": [
+            {
+                "id": machine.id,
+                "token": machine.token,
+                "token_short": machine.token_short(),
+                "ip_address": machine.ip_address,
+                "lock_level": machine.lock_level or 0,
+                "locked_until": format_lock_until(machine.locked_until),
+            }
+            for machine in machines
+        ],
+    }
+    revision = _live_revision(payload)
+    if request.args.get("rev") == revision:
+        return jsonify({"unchanged": True, "revision": revision})
+    payload["unchanged"] = False
+    payload["revision"] = revision
+    return jsonify(payload)
 
 
 @app.route("/agendamentos/<int:booking_id>/presente", methods=["POST"])

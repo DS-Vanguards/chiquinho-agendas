@@ -12,6 +12,7 @@
     </form>
     {% endif %}
 
+    <div data-live-admin-bookings>
     {% if bookings %}
     <div class="table-wrapper admin-bookings-scroll">
         <table class="data-table">
@@ -59,9 +60,10 @@
     {% else %}
     <p class="empty-state">Nenhum agendamento registrado.</p>
     {% endif %}
+    </div>
 </section>
 
-<section class="admin-section">
+<section class="admin-section" data-live-admin-users>
     <h2 class="admin-section-heading">
         Usuários
         {% if is_admin %}
@@ -149,6 +151,7 @@
         Equipamentos que atingiram o limite de tentativas de criação de conta.
         O primeiro bloqueio vale 5 minutos; na 6ª reincidência o bloqueio passa a 1 dia.
     </p>
+    <div data-live-admin-machines>
     {% if locked_machines %}
     <div class="table-wrapper admin-users-scroll">
         <table class="data-table">
@@ -193,6 +196,7 @@
     {% else %}
     <p class="text-muted">Nenhuma máquina bloqueada no momento.</p>
     {% endif %}
+    </div>
 </section>
 
 <section class="admin-section">
@@ -377,17 +381,17 @@
         amount.value = "";
     }
 
-    document.querySelectorAll(".js-open-lock-panel").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-            const lockId = btn.getAttribute("data-lock-id");
-            const token = btn.getAttribute("data-lock-token") || "";
-            form.action = "/admin/machine-locks/" + lockId + "/duration";
-            hint.textContent = token
-                ? "Máquina " + token + " — informe por quanto tempo permanecerá bloqueada."
-                : "Informe por quanto tempo esta máquina permanecerá bloqueada.";
-            panel.hidden = false;
-            amount.focus();
-        });
+    document.addEventListener("click", function (e) {
+        const btn = e.target.closest(".js-open-lock-panel");
+        if (!btn) return;
+        const lockId = btn.getAttribute("data-lock-id");
+        const token = btn.getAttribute("data-lock-token") || "";
+        form.action = "/admin/machine-locks/" + lockId + "/duration";
+        hint.textContent = token
+            ? "Máquina " + token + " — informe por quanto tempo permanecerá bloqueada."
+            : "Informe por quanto tempo esta máquina permanecerá bloqueada.";
+        panel.hidden = false;
+        amount.focus();
     });
 
     cancel.addEventListener("click", closePanel);
@@ -429,18 +433,18 @@
         form.removeAttribute("action");
     }
 
-    document.querySelectorAll(".js-open-role-panel").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-            const userId = btn.getAttribute("data-user-id");
-            const name = btn.getAttribute("data-username") || "";
-            const role = btn.getAttribute("data-role") || "";
-            form.action = "/admin/users/" + userId + "/role";
-            hint.textContent = name ? "Escolha o cargo de " + name + "." : "Escolha a função deste usuário.";
-            form.querySelectorAll('input[name="role"]').forEach(function (input) {
-                input.checked = input.value === role;
-            });
-            panel.hidden = false;
+    document.addEventListener("click", function (e) {
+        const btn = e.target.closest(".js-open-role-panel");
+        if (!btn) return;
+        const userId = btn.getAttribute("data-user-id");
+        const name = btn.getAttribute("data-username") || "";
+        const role = btn.getAttribute("data-role") || "";
+        form.action = "/admin/users/" + userId + "/role";
+        hint.textContent = name ? "Escolha o cargo de " + name + "." : "Escolha a função deste usuário.";
+        form.querySelectorAll('input[name="role"]').forEach(function (input) {
+            input.checked = input.value === role;
         });
+        panel.hidden = false;
     });
 
     if (cancel) cancel.addEventListener("click", closePanel);
@@ -461,20 +465,20 @@
         form.removeAttribute("action");
     }
 
-    document.querySelectorAll(".js-open-shift-panel").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-            const userId = btn.getAttribute("data-user-id");
-            const name = btn.getAttribute("data-username") || "";
-            const shift = btn.getAttribute("data-shift") || "";
-            form.action = "/admin/users/" + userId + "/shift";
-            hint.textContent = name
-                ? "Defina o turno da agenda de " + name + "."
-                : "Defina o turno da agenda deste usuário.";
-            form.querySelectorAll('input[name="shift"]').forEach(function (input) {
-                input.checked = input.value === shift;
-            });
-            panel.hidden = false;
+    document.addEventListener("click", function (e) {
+        const btn = e.target.closest(".js-open-shift-panel");
+        if (!btn) return;
+        const userId = btn.getAttribute("data-user-id");
+        const name = btn.getAttribute("data-username") || "";
+        const shift = btn.getAttribute("data-shift") || "";
+        form.action = "/admin/users/" + userId + "/shift";
+        hint.textContent = name
+            ? "Defina o turno da agenda de " + name + "."
+            : "Defina o turno da agenda deste usuário.";
+        form.querySelectorAll('input[name="shift"]').forEach(function (input) {
+            input.checked = input.value === shift;
         });
+        panel.hidden = false;
     });
 
     if (cancel) cancel.addEventListener("click", closePanel);

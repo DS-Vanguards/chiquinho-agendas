@@ -123,6 +123,7 @@
     const blockUrl = "{{ url_for('bloquear_horario') }}";
     const unavailableUrl = "{{ url_for('marcar_indisponivel') }}";
     const currentUsername = {{ current_user.username | tojson }};
+    const currentUserId = {{ current_user.id | tojson }};
     let pendingAction = null;
     let busy = false;
 
@@ -398,5 +399,64 @@
             markUnavailableCell(cell);
         });
     }
+
+    function cellLiveKey(cell) {
+        if (!cell.dataset.bookingId) return "empty";
+        if (cell.classList.contains("cell-blocked")) return "bloqueado:" + cell.dataset.bookingId;
+        if (cell.classList.contains("cell-marked-unavailable")) return "indisponivel:" + cell.dataset.bookingId;
+        return "booked:" + cell.dataset.bookingId + ":" + (cell.textContent || "").trim();
+    }
+
+    function syncLiveCell(cell, booking) {
+        let nextKey = "empty";
+        if (booking) {
+            if (booking.status === "bloqueado") nextKey = "bloqueado:" + booking.id;
+            else if (booking.status === "indisponivel") nextKey = "indisponivel:" + booking.id;
+            else nextKey = "booked:" + booking.id + ":" + String(booking.username || "").toUpperCase();
+        }
+        if (cellLiveKey(cell) === nextKey) return;
+        if (pendingAction && pendingAction.cell === cell) closeModal();
+        if (!booking) {
+            applyEmpty(cell);
+            return;
+        }
+        const payload = { booking_id: booking.id, username: booking.username };
+        if (booking.status === "bloqueado") {
+            applyBlocked(cell, payload);
+            if (cell.dataset.canBlock !== "1") {
+                cell.dataset.action = "";
+                cell.classList.remove("cell-clickable");
+            }
+            return;
+        }
+        if (booking.status === "indisponivel") {
+            applyUnavailable(cell, payload);
+            if (cell.dataset.canUnavailable !== "1") {
+                cell.dataset.action = "";
+                cell.classList.remove("cell-clickable");
+            }
+            return;
+        }
+        applyBooked(cell, payload);
+        const own = Number(booking.teacher_id) === Number(currentUserId) && cell.dataset.canBook === "1";
+        if (!own) {
+            cell.dataset.action = "";
+            cell.classList.remove("cell-clickable");
+        }
+    }
+
+    window.ScheduleLive = window.ScheduleLive || { handlers: [] };
+    window.ScheduleLive.handlers.push(function (bookings) {
+        if (!grid) return;
+        const map = {};
+        (bookings || []).forEach(function (item) {
+            map[item.room + "|" + item.start_time + "|" + item.end_time] = item;
+        });
+        grid.querySelectorAll(".schedule-cell[data-room]").forEach(function (cell) {
+            if (cell.classList.contains("cell-busy")) return;
+            const key = cell.dataset.room + "|" + cell.dataset.start + "|" + cell.dataset.end;
+            syncLiveCell(cell, map[key]);
+        });
+    });
 })();
 </script>
