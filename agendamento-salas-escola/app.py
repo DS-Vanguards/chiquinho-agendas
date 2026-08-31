@@ -271,7 +271,7 @@ def get_home_endpoint(user=None) -> str:
     user = user or current_user
     if user.is_authenticated and user.needs_shift_choice():
         return "escolher_turno"
-    if user.is_authenticated and user.is_professor:
+    if user.is_authenticated and user.uses_assigned_shift():
         return "agendamentos"
     return "dashboard"
 
@@ -655,12 +655,12 @@ def login():
 @login_required
 def escolher_turno():
     if not current_user.needs_shift_choice():
-        return redirect(url_for("agendamentos" if current_user.is_professor else "dashboard"))
+        return redirect(url_for("agendamentos" if current_user.uses_assigned_shift() else "dashboard"))
 
     if request.method == "POST":
         shift = request.form.get("shift", "")
         if shift not in config.SHIFTS:
-            flash("Escolha o turno em que você dá aula.", "error")
+            flash("Escolha o turno.", "error")
             return render_template("escolher_turno.html")
         current_user.shift = shift
         db.session.commit()
@@ -817,7 +817,7 @@ def logout():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    if current_user.is_professor:
+    if current_user.uses_assigned_shift():
         return redirect(url_for("agendamentos"))
 
     if current_user.is_visualizador:
@@ -865,10 +865,27 @@ def agendamentos():
         "vgs_owner",
         "moderador",
         "coordenador",
+        "inspetor",
     ):
         query = Booking.query.filter_by(booking_date=selected_date)
         bookings = query.order_by(Booking.start_time, Booking.room).all()
         bookings_manha, bookings_tarde = split_bookings_by_shift(bookings)
+        visible = current_user.visible_shifts()
+        if current_user.is_inspetor:
+            if "manha" not in visible:
+                bookings_manha = []
+            if "tarde" not in visible:
+                bookings_tarde = []
+            context = build_schedule_context(selected_date)
+            return render_template(
+                "agendamentos.html",
+                view_mode="inspetor",
+                bookings_manha=bookings_manha,
+                bookings_tarde=bookings_tarde,
+                detailed_shifts=visible,
+                hide_detailed_header=True,
+                **context,
+            )
         prev_date = (selected_date - timedelta(days=1)).isoformat()
         next_date = (selected_date + timedelta(days=1)).isoformat()
 

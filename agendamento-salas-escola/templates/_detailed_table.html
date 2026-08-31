@@ -1,4 +1,7 @@
 <div class="detailed-table-panel" data-live-agenda data-live-detailed data-live-date="{{ filter_date }}">
+    {% if hide_detailed_header %}
+    <h2 class="shift-board-title">Tabela detalhada</h2>
+    {% else %}
     <div class="schedule-header">
         <h1 class="schedule-title">TABELA DETALHADA</h1>
         <p class="schedule-welcome">Visão em lista dos agendamentos por data</p>
@@ -12,6 +15,7 @@
             </div>
         </form>
     </div>
+    {% endif %}
 
     {% macro detailed_shift_table(title, items, shift_key) %}
     <section class="detailed-shift-section" data-live-shift="{{ shift_key }}">
@@ -51,6 +55,11 @@
     </section>
     {% endmacro %}
 
+    {% set show_shifts = detailed_shifts if detailed_shifts is defined else ['manha', 'tarde'] %}
+    {% if 'manha' in show_shifts %}
     {{ detailed_shift_table(SHIFT_LABELS.get('manha', 'Turno 1'), bookings_manha|default([]), 'manha') }}
+    {% endif %}
+    {% if 'tarde' in show_shifts %}
     {{ detailed_shift_table(SHIFT_LABELS.get('tarde', 'Turno 2'), bookings_tarde|default([]), 'tarde') }}
+    {% endif %}
 </div>

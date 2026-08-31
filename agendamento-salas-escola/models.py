@@ -98,12 +98,19 @@ class User(UserMixin, db.Model):
         return self.role == "professor"
 
     @property
+    def is_inspetor(self) -> bool:
+        return self.role == "inspetor"
+
+    @property
     def is_coordenador(self) -> bool:
         return self.role == "coordenador"
 
     @property
     def is_visualizador(self) -> bool:
         return self.role == "visualizador"
+
+    def uses_assigned_shift(self) -> bool:
+        return self.role in ("professor", "inspetor")
 
     def role_rank(self) -> int:
         return ROLE_RANK.get(self.role, -1)
@@ -129,6 +136,7 @@ class User(UserMixin, db.Model):
     def can_view_bookings(self) -> bool:
         return self.role in (
             "professor",
+            "inspetor",
             "visualizador",
             "admin",
             "super_admin",
@@ -165,21 +173,21 @@ class User(UserMixin, db.Model):
         return self.role_rank() > ROLE_RANK.get(other.role, 99)
 
     def needs_shift_choice(self) -> bool:
-        return self.role == "professor" and self.shift not in ("manha", "tarde", "ambos")
+        return self.uses_assigned_shift() and self.shift not in ("manha", "tarde", "ambos")
 
     def visible_shifts(self) -> list:
         if self.shift == "ambos":
             return ["manha", "tarde"]
         if self.shift in ("manha", "tarde"):
             return [self.shift]
-        if self.role != "professor":
+        if not self.uses_assigned_shift():
             return ["manha", "tarde"]
         return []
 
     def shift_label(self) -> str:
         if self.shift in SHIFT_LABELS:
             return SHIFT_LABELS[self.shift]
-        if self.role != "professor":
+        if not self.uses_assigned_shift():
             return SHIFT_LABELS["ambos"]
         return "Não definido"
 

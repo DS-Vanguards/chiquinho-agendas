@@ -174,6 +174,7 @@ SHIFT_LABELS = {
 ROLES = [
     "visualizador",
     "professor",
+    "inspetor",
     "coordenador",
     "moderador",
     "admin",
@@ -183,6 +184,7 @@ ROLES = [
 ROLE_LABELS = {
     "visualizador": "visualizador",
     "professor": "professor",
+    "inspetor": "Inspetor",
     "coordenador": "coordenador",
     "moderador": "moderador",
     "admin": "Admin",
@@ -192,11 +194,12 @@ ROLE_LABELS = {
 ROLE_RANK = {
     "visualizador": 0,
     "professor": 1,
-    "coordenador": 2,
-    "moderador": 3,
-    "admin": 4,
-    "super_admin": 5,
-    "vgs_owner": 6,
+    "inspetor": 2,
+    "coordenador": 3,
+    "moderador": 4,
+    "admin": 5,
+    "super_admin": 6,
+    "vgs_owner": 7,
 }
 ADMIN_ACCESS_ROLES = ("admin", "super_admin", "vgs_owner")
 STAFF_ROLES = ("admin", "super_admin", "vgs_owner", "moderador")

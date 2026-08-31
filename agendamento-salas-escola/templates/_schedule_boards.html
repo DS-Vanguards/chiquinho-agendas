@@ -22,6 +22,8 @@
             <p class="schedule-hint">Clique nas células brancas para escolher: bloquear ou agendar no seu nome. Clique no seu nome para desagendar ou em BLOQUEADO para liberar.</p>
             {% elif current_user.can_book() %}
             <p class="schedule-hint">Clique nas células brancas para agendar. Clique no seu nome para desagendar.</p>
+            {% elif current_user.is_inspetor %}
+            <p class="schedule-hint">Visualização dos horários do seu turno. Você não pode marcar agendamentos.</p>
             {% endif %}
         </div>
 

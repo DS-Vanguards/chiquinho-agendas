@@ -13,6 +13,10 @@
 </div>
 {% elif view_mode == 'detailed' %}
 {% include '_detailed_table.html' %}
+{% elif view_mode == 'inspetor' %}
+{% set form_action = 'agendamentos' %}
+{% include '_schedule_boards.html' %}
+{% include '_detailed_table.html' %}
 {% else %}
 {% set form_action = 'agendamentos' %}
 {% include '_schedule_boards.html' %}

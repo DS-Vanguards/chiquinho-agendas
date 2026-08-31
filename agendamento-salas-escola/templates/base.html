@@ -20,7 +20,7 @@
             <span>Chiquinho Agendamentos - Leste-3</span>
         </a>
         <div class="nav-links">
-            {% if not current_user.is_professor %}
+            {% if not current_user.uses_assigned_shift() %}
             <a href="{{ url_for('dashboard') }}">Início</a>
             {% endif %}
             {% if current_user.can_view_bookings() %}

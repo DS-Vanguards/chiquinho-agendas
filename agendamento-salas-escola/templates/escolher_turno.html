@@ -3,7 +3,11 @@
 {% block content %}
 <div class="auth-card shift-pick-card">
     <h1>Qual é o seu turno?</h1>
+    {% if current_user.is_inspetor %}
+    <p class="subtitle">No primeiro acesso, escolha o turno que você acompanha. A agenda mostrará só os horários e as salas desse período.</p>
+    {% else %}
     <p class="subtitle">No primeiro acesso, escolha o turno em que você dá aula. A agenda mostrará só os horários e as salas desse período.</p>
+    {% endif %}
 
     <form method="POST" class="shift-pick-form">
         <button type="submit" name="shift" value="manha" class="shift-pick-option">
@@ -12,7 +16,7 @@
         </button>
         <button type="submit" name="shift" value="tarde" class="shift-pick-option">
             <strong>Turno 2</strong>
-            <span>Salas 01 a 04, auditório, informática, sala de leitura e sala de artes</span>
+            <span>Auditório, informática, sala de leitura e sala de artes</span>
         </button>
     </form>
 </div>
