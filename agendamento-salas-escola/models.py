@@ -237,9 +237,26 @@ class SystemConfig(db.Model):
             row.value = serialized
         else:
             db.session.add(SystemConfig(key=key, value=serialized))
+        try:
+            from flask import g, has_request_context
+
+            if has_request_context() and key == "time_slots":
+                g.pop("_time_config", None)
+                g.pop("_periods_for_shift", None)
+        except RuntimeError:
+            pass
 
     @staticmethod
     def get_time_config():
+        try:
+            from flask import g, has_request_context
+
+            if has_request_context():
+                cached = getattr(g, "_time_config", None)
+                if cached is not None:
+                    return cached
+        except RuntimeError:
+            pass
         config = SystemConfig.get("time_slots")
         if not config:
             config = {
@@ -260,6 +277,13 @@ class SystemConfig(db.Model):
             config["lista2"] = list(DEFAULT_TIME_LIST_2)
             SystemConfig.set("time_slots", config)
             db.session.commit()
+        try:
+            from flask import g, has_request_context
+
+            if has_request_context():
+                g._time_config = config
+        except RuntimeError:
+            pass
         return config
 
     @staticmethod

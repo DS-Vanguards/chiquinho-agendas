@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from flask import (
     Flask,
     flash,
+    g,
     jsonify,
     make_response,
     redirect,
@@ -28,7 +29,9 @@ from flask_login import (
 )
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import text
+from sqlalchemy import event, func, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import joinedload
 
 import config
 from core.layout_sig import bind as _layout_bind
@@ -65,6 +68,25 @@ db.init_app(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 login_manager.login_message = "Faça login para continuar."
+app.config.setdefault("SEND_FILE_MAX_AGE_DEFAULT", 120)
+
+
+@event.listens_for(Engine, "connect")
+def _sqlite_fast_pragmas(dbapi_connection, _connection_record):
+    module = (type(dbapi_connection).__module__ or "").lower()
+    name = type(dbapi_connection).__name__.lower()
+    if "sqlite" not in module and "sqlite" not in name:
+        return
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
+
+
+def _should_migrate_schema() -> bool:
+    if os.environ.get("RUN_DB_MIGRATE", "").lower() in ("1", "true", "yes"):
+        return True
+    return not os.environ.get("VERCEL")
 
 
 @app.before_request
@@ -72,6 +94,9 @@ def _revive_db_connection():
     if request.endpoint in ("static", "favicon"):
         return
     if not str(app.config.get("SQLALCHEMY_DATABASE_URI", "")).startswith("postgresql"):
+        return
+    engine_opts = app.config.get("SQLALCHEMY_ENGINE_OPTIONS") or {}
+    if engine_opts.get("pool_pre_ping") or engine_opts.get("poolclass") is not None:
         return
     try:
         db.session.execute(text("SELECT 1"))
@@ -342,7 +367,12 @@ def inject_globals():
 
 @app.after_request
 def set_security_headers(response):
-    return add_security_headers(response)
+    response = add_security_headers(response)
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = (
+            "public, max-age=120, stale-while-revalidate=86400"
+        )
+    return response
 
 
 WEEKDAYS_PT = [
@@ -435,8 +465,20 @@ def parse_shift_rows(lines) -> list:
 
 
 def periods_for_shift(shift: str) -> list:
+    bucket = getattr(g, "_periods_for_shift", None)
+    if bucket is None:
+        bucket = {}
+        try:
+            g._periods_for_shift = bucket
+        except RuntimeError:
+            pass
+    cached = bucket.get(shift)
+    if cached is not None:
+        return cached
     rows = parse_shift_rows(SystemConfig.get_time_slots_for_shift(shift))
-    return [(row["start_time"], row["end_time"]) for row in rows if row["kind"] == "aula"]
+    result = [(row["start_time"], row["end_time"]) for row in rows if row["kind"] == "aula"]
+    bucket[shift] = result
+    return result
 
 
 def classify_booking_shift(booking) -> str:
@@ -493,13 +535,18 @@ def serialize_live_booking(booking) -> dict:
     }
 
 
-def build_shift_context(selected_date: date, shift: str):
+def build_shift_context(selected_date: date, shift: str, grid=None):
     rows = parse_shift_rows(SystemConfig.get_time_slots_for_shift(shift))
-
-    bookings = Booking.query.filter_by(booking_date=selected_date).all()
-    grid = {}
-    for booking in bookings:
-        grid[(booking.room, booking.start_time, booking.end_time)] = booking
+    if grid is None:
+        bookings = (
+            Booking.query.options(joinedload(Booking.teacher))
+            .filter_by(booking_date=selected_date)
+            .all()
+        )
+        grid = {
+            (booking.room, booking.start_time, booking.end_time): booking
+            for booking in bookings
+        }
 
     return {
         "shift": shift,
@@ -514,9 +561,17 @@ def build_schedule_context(selected_date: date, user=None):
     user = user or current_user
     prev_date = (selected_date - timedelta(days=1)).isoformat()
     next_date = (selected_date + timedelta(days=1)).isoformat()
-    views = [
-        build_shift_context(selected_date, shift) for shift in user.visible_shifts()
-    ]
+    shifts = user.visible_shifts()
+    bookings = (
+        Booking.query.options(joinedload(Booking.teacher))
+        .filter_by(booking_date=selected_date)
+        .all()
+    )
+    grid = {
+        (booking.room, booking.start_time, booking.end_time): booking
+        for booking in bookings
+    }
+    views = [build_shift_context(selected_date, shift, grid) for shift in shifts]
     return {
         "selected_date": selected_date,
         "date_label": format_date_label(selected_date),
@@ -868,8 +923,12 @@ def agendamentos():
         "coordenador",
         "inspetor",
     ):
-        query = Booking.query.filter_by(booking_date=selected_date)
-        bookings = query.order_by(Booking.start_time, Booking.room).all()
+        bookings = (
+            Booking.query.options(joinedload(Booking.teacher))
+            .filter_by(booking_date=selected_date)
+            .order_by(Booking.start_time, Booking.room)
+            .all()
+        )
         bookings_manha, bookings_tarde = split_bookings_by_shift(bookings)
         detailed_shifts = ["manha", "tarde"]
         if current_user.is_inspetor:
@@ -1033,16 +1092,29 @@ def live_agenda():
 
     selected_date = get_selected_date(request.args.get("date"))
     bookings = (
-        Booking.query.filter_by(booking_date=selected_date)
+        Booking.query.options(joinedload(Booking.teacher))
+        .filter_by(booking_date=selected_date)
         .order_by(Booking.start_time, Booking.room)
         .all()
     )
+    revision = _live_revision(
+        [
+            (
+                b.id,
+                b.room,
+                b.start_time,
+                b.end_time,
+                b.status,
+                b.teacher_id,
+            )
+            for b in bookings
+        ]
+    )
+    if request.args.get("rev") == revision:
+        return jsonify({"unchanged": True, "revision": revision})
     items = [serialize_live_booking(b) for b in bookings]
     manha = [b for b in items if b["shift"] != "tarde"]
     tarde = [b for b in items if b["shift"] == "tarde"]
-    revision = _live_revision(items)
-    if request.args.get("rev") == revision:
-        return jsonify({"unchanged": True, "revision": revision})
     return jsonify(
         {
             "unchanged": False,
@@ -1062,9 +1134,42 @@ def live_admin():
     if too_many_requests("live-admin", 90, 60):
         return jsonify({"unchanged": True}), 200
 
-    bookings = Booking.query.order_by(
-        Booking.booking_date.desc(), Booking.start_time
-    ).all()
+    booking_sig = db.session.query(
+        Booking.id,
+        Booking.status,
+        Booking.room,
+        Booking.start_time,
+        Booking.end_time,
+        Booking.booking_date,
+        Booking.teacher_id,
+    ).order_by(Booking.id).all()
+    user_sig = (
+        db.session.query(User.id, User.role, User.shift, User.session_version)
+        .order_by(User.id)
+        .all()
+    )
+    machine_sig = db.session.query(
+        func.count(MachineGuard.id), func.max(MachineGuard.locked_until)
+    ).filter(
+        MachineGuard.locked_until != None,  # noqa: E711
+        MachineGuard.locked_until > datetime.utcnow(),
+    ).one()
+    revision = _live_revision(
+        {
+            "b": [list(row) for row in booking_sig],
+            "u": [list(row) for row in user_sig],
+            "m": [machine_sig[0], str(machine_sig[1] or "")],
+            "admin": current_user.has_admin_access(),
+        }
+    )
+    if request.args.get("rev") == revision:
+        return jsonify({"unchanged": True, "revision": revision})
+
+    bookings = (
+        Booking.query.options(joinedload(Booking.teacher))
+        .order_by(Booking.booking_date.desc(), Booking.start_time)
+        .all()
+    )
     users = User.query.order_by(User.username).all()
     machines = (
         MachineGuard.query.filter(
@@ -1105,9 +1210,6 @@ def live_admin():
             for machine in machines
         ],
     }
-    revision = _live_revision(payload)
-    if request.args.get("rev") == revision:
-        return jsonify({"unchanged": True, "revision": revision})
     payload["unchanged"] = False
     payload["revision"] = revision
     return jsonify(payload)
@@ -1134,9 +1236,11 @@ def marcar_presente(booking_id):
 @app.route("/admin")
 @role_required(*config.STAFF_ROLES)
 def admin_panel():
-    bookings = Booking.query.order_by(
-        Booking.booking_date.desc(), Booking.start_time
-    ).all()
+    bookings = (
+        Booking.query.options(joinedload(Booking.teacher))
+        .order_by(Booking.booking_date.desc(), Booking.start_time)
+        .all()
+    )
     users = User.query.order_by(User.username).all()
     time_config = SystemConfig.get_time_config()
     notification_emails = NotificationEmail.query.order_by(NotificationEmail.email).all()
@@ -1462,8 +1566,9 @@ def admin_delete_notification_email(email_id):
 
 
 with app.app_context():
-    db.create_all()
-    ensure_schema()
+    if _should_migrate_schema():
+        db.create_all()
+        ensure_schema()
     init_default_data()
 
 
@@ -1472,4 +1577,5 @@ if __name__ == "__main__":
         debug=os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes"),
         host="127.0.0.1",
         port=5000,
+        threaded=True,
     )

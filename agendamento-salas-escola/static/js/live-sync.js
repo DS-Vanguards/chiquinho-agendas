@@ -65,8 +65,8 @@
             });
         }
 
-        tick();
         timer = setInterval(tick, POLL_MS);
+        setTimeout(tick, 800);
         document.addEventListener("visibilitychange", function () {
             if (!document.hidden) tick();
         });
@@ -285,6 +285,22 @@
         limitVisibleRows(document.querySelector(".admin-bookings-scroll"), 6);
     }
 
+    function prefetchNav() {
+        document.querySelectorAll(".nav-links a[href]").forEach(function (link) {
+            link.addEventListener("pointerenter", function () {
+                if (link.dataset.prefetched) return;
+                var href = link.getAttribute("href");
+                if (!href) return;
+                link.dataset.prefetched = "1";
+                fetch(href, {
+                    credentials: "same-origin",
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                }).catch(function () {});
+            }, { once: true });
+        });
+    }
+
     initAgendaLive();
     initAdminLive();
+    prefetchNav();
 })();
