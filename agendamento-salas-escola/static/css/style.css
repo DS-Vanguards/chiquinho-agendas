@@ -938,10 +938,11 @@ h2 {
     inset: 0;
     background: rgba(15, 23, 42, 0.55);
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     z-index: 1000;
-    padding: 1rem;
+    padding: 1.25rem 1rem;
+    overflow: auto;
 }
 
 .modal-overlay[hidden] {
@@ -954,23 +955,60 @@ h2 {
     padding: 1.75rem;
     max-width: 420px;
     width: 100%;
+    max-height: calc(100vh - 2.5rem);
+    max-height: calc(100dvh - 2.5rem);
+    margin-top: auto;
+    margin-bottom: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
 }
 
 .modal-box h3 {
     margin-bottom: 0.75rem;
     font-size: 1.15rem;
+    flex-shrink: 0;
 }
 
 .modal-box p {
     color: var(--text-muted);
     margin-bottom: 1.25rem;
+    flex-shrink: 0;
+}
+
+.modal-box > form,
+.modal-box > .form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+}
+
+.modal-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.15rem;
+}
+
+.modal-box:not(:has(> form)) {
+    overflow-y: auto;
 }
 
 .modal-actions {
     display: flex;
     gap: 0.75rem;
     justify-content: flex-end;
+    flex-shrink: 0;
+    margin-top: auto;
+    padding-top: 0.85rem;
+    background: #fff;
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
 }
 
 .modal-actions[hidden] {
@@ -1191,19 +1229,25 @@ h2 {
 .choice-options {
     display: flex;
     flex-direction: column;
-    gap: 0.65rem;
-    margin-bottom: 1.25rem;
+    gap: 0.55rem;
+    margin-bottom: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.15rem;
 }
 
 .choice-option {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.85rem 1rem;
+    padding: 0.7rem 0.9rem;
     border: 2px solid #e2e8f0;
     border-radius: 10px;
     cursor: pointer;
     background: #f8fafc;
+    flex-shrink: 0;
 }
 
 .choice-option:hover {

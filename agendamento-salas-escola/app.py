@@ -179,6 +179,18 @@ def allowed_email_domains_text() -> str:
     return ", ".join("@" + d for d in config.ALLOWED_EMAIL_DOMAINS)
 
 
+def duplicate_account_message(username: str, email: str) -> str | None:
+    name_taken = User.query.filter_by(username=username).first() is not None
+    email_taken = User.query.filter_by(email=email).first() is not None
+    if name_taken and email_taken:
+        return "Já existe uma conta com este nome e este e-mail."
+    if name_taken:
+        return "Este nome de usuário já está em uso."
+    if email_taken:
+        return "Este e-mail já está cadastrado."
+    return None
+
+
 MACHINE_COOKIE = "dv_mid"
 REGISTER_ATTEMPT_LIMIT = 4
 DS_SUPPORT_URL = "https://ds-vanguards.vercel.app/"
@@ -778,22 +790,22 @@ def register():
             flash("A senha deve ter pelo menos 6 caracteres.", "error")
         elif password != confirm:
             flash("As senhas não coincidem.", "error")
-        elif User.query.filter_by(username=username).first():
-            flash("Este nome de usuário já está em uso.", "error")
-        elif User.query.filter_by(email=email).first():
-            flash("Este e-mail já está cadastrado.", "error")
         else:
-            role = "professor" if should_auto_assign_professor(email) else "visualizador"
-            user = User(username=username, email=email, role=role, email_verified=True)
-            user.set_password(password)
-            db.session.add(user)
-            db.session.commit()
-            if role == "professor":
-                flash("Cadastro realizado como professor! Faça login para continuar.", "success")
+            conflict = duplicate_account_message(username, email)
+            if conflict:
+                flash(conflict, "error")
             else:
-                flash("Cadastro realizado! Faça login para continuar.", "success")
-            response = make_response(redirect(url_for("login")))
-            return attach_machine_cookie(response, guard.token)
+                role = "professor" if should_auto_assign_professor(email) else "visualizador"
+                user = User(username=username, email=email, role=role, email_verified=True)
+                user.set_password(password)
+                db.session.add(user)
+                db.session.commit()
+                if role == "professor":
+                    flash("Cadastro realizado como professor! Faça login para continuar.", "success")
+                else:
+                    flash("Cadastro realizado! Faça login para continuar.", "success")
+                response = make_response(redirect(url_for("login")))
+                return attach_machine_cookie(response, guard.token)
 
     response = make_response(render_template("register.html", register_blocked=False))
     return attach_machine_cookie(response, guard.token)
@@ -1409,20 +1421,24 @@ def admin_add_user():
         flash("A senha deve ter pelo menos 6 caracteres.", "error")
     elif password != confirm:
         flash("As senhas não coincidem.", "error")
-    elif User.query.filter_by(username=username).first():
-        flash("Este nome de usuário já está em uso.", "error")
-    elif User.query.filter_by(email=email).first():
-        flash("Este e-mail já está cadastrado.", "error")
     else:
-        user = User(username=username, email=email, role=role, email_verified=True)
-        user.set_password(password)
-        db.session.add(user)
-        try:
-            db.session.commit()
-            flash(f"Usuário {username} cadastrado com a função {role_label(role)}.", "success")
-        except IntegrityError:
-            db.session.rollback()
-            flash("Este nome de usuário ou e-mail já está cadastrado.", "error")
+        conflict = duplicate_account_message(username, email)
+        if conflict:
+            flash(conflict, "error")
+        else:
+            user = User(username=username, email=email, role=role, email_verified=True)
+            user.set_password(password)
+            db.session.add(user)
+            try:
+                db.session.commit()
+                flash(f"Usuário {username} cadastrado com a função {role_label(role)}.", "success")
+            except IntegrityError:
+                db.session.rollback()
+                flash(
+                    duplicate_account_message(username, email)
+                    or "Este nome de usuário ou e-mail já está cadastrado.",
+                    "error",
+                )
     return redirect(url_for("admin_panel"))
 
 

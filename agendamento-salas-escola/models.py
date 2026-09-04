@@ -147,12 +147,14 @@ class User(UserMixin, db.Model):
 
     def assignable_roles(self) -> list:
         if self.role == "admin":
-            return [r for r in ROLES if ROLE_RANK.get(r, 99) < ROLE_RANK["admin"]]
-        if self.role == "super_admin":
-            return [r for r in ROLES if ROLE_RANK.get(r, 99) <= ROLE_RANK["super_admin"]]
-        if self.role == "vgs_owner":
-            return list(ROLES)
-        return []
+            roles = [r for r in ROLES if ROLE_RANK.get(r, 99) < ROLE_RANK["admin"]]
+        elif self.role == "super_admin":
+            roles = [r for r in ROLES if ROLE_RANK.get(r, 99) <= ROLE_RANK["super_admin"]]
+        elif self.role == "vgs_owner":
+            roles = list(ROLES)
+        else:
+            return []
+        return sorted(roles, key=lambda r: ROLE_RANK.get(r, -1), reverse=True)
 
     def can_edit_user(self, other) -> bool:
         if other is None or other.id == self.id:

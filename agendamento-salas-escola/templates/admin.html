@@ -264,7 +264,8 @@
     <div class="modal-box delete-dates-panel" role="dialog" aria-labelledby="delete-dates-title">
         <h3 id="delete-dates-title">Excluir agendamentos</h3>
         <p>Escolha uma data ou um intervalo para apagar os agendamentos.</p>
-        <form id="delete-dates-form" method="POST" action="{{ url_for('admin_delete_bookings_by_date') }}" class="form">
+        <form method="POST" action="{{ url_for('admin_delete_bookings_by_date') }}" class="form" id="delete-dates-form">
+            <div class="modal-scroll">
             <div class="choice-options">
                 <label class="choice-option">
                     <input type="radio" name="mode" value="single" checked>
@@ -283,6 +284,7 @@
                     <input type="date" id="delete-date-end" name="date_end">
                 </div>
             </div>
+            </div>
             <div class="modal-actions">
                 <button type="button" id="delete-dates-cancel" class="btn btn-secondary">Cancelar</button>
                 <button type="submit" class="btn btn-danger">Excluir</button>
@@ -297,6 +299,7 @@
     <div class="modal-box add-user-panel" role="dialog" aria-labelledby="add-user-title">
         <h3 id="add-user-title">Criar Conta</h3>
         <form method="POST" action="{{ url_for('admin_add_user') }}" class="form">
+            <div class="modal-scroll">
             <label for="add-username">Nome de usuário</label>
             <input type="text" id="add-username" name="username" required minlength="3" maxlength="80"
                    placeholder="Ex: João">
@@ -317,7 +320,7 @@
                 <option value="{{ r }}" {% if r == 'visualizador' %}selected{% endif %}>{{ ROLE_LABELS.get(r, r) }}</option>
                 {% endfor %}
             </select>
-
+            </div>
             <div class="modal-actions">
                 <button type="button" id="add-user-cancel" class="btn btn-secondary">Cancelar</button>
                 <button type="submit" class="btn btn-primary">Cadastrar</button>
@@ -382,6 +385,7 @@
         <h3 id="lock-panel-title">Alterar bloqueio</h3>
         <p id="lock-panel-hint">Informe por quanto tempo esta máquina permanecerá bloqueada.</p>
         <form id="lock-duration-form" method="POST" class="form">
+            <div class="modal-scroll">
             <label for="lock-amount">Número</label>
             <input type="text" id="lock-amount" name="amount" inputmode="numeric" autocomplete="off"
                    placeholder="1, 2, 3, 4..." required>
@@ -394,7 +398,7 @@
                 <option value="months">meses</option>
                 <option value="years">anos</option>
             </select>
-
+            </div>
             <div class="modal-actions">
                 <button type="button" id="lock-panel-cancel" class="btn btn-secondary">Cancelar</button>
                 <button type="submit" class="btn btn-primary">Aplicar</button>
