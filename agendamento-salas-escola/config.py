@@ -135,15 +135,18 @@ ROOMS_ESPECIAIS = {
     "BIB": {"id": "BIB", "label": "SALA LEITURA", "style": "especiais"},
     "ARTES": {"id": "ARTES", "label": "SALA DE ARTES", "style": "especiais"},
 }
+# AUD (Auditório) permanece em ROOMS_ESPECIAIS/ROOM_LABELS para agendamentos
+# antigos e para recolocar na grade: descomente as linhas abaixo.
 GRID_ROOMS_BY_SHIFT = {
     "manha": [
         ROOMS_ESPECIAIS["MAKER"],
-        ROOMS_ESPECIAIS["AUD"],
+        # ROOMS_ESPECIAIS["AUD"],
         ROOMS_ESPECIAIS["BIB"],
         ROOMS_ESPECIAIS["ARTES"],
     ],
     "tarde": [
-        ROOMS_ESPECIAIS["AUD"],
+        ROOMS_ESPECIAIS["MAKER"],
+        # ROOMS_ESPECIAIS["AUD"],
         ROOMS_ESPECIAIS["INFO"],
         ROOMS_ESPECIAIS["BIB"],
         ROOMS_ESPECIAIS["ARTES"],
@@ -165,6 +168,7 @@ def _all_grid_rooms():
 GRID_ROOMS = _all_grid_rooms()
 ROOMS = [room["id"] for room in GRID_ROOMS]
 ROOM_LABELS = {room["id"]: room["label"] for room in GRID_ROOMS}
+ROOM_LABELS.update({room["id"]: room["label"] for room in ROOMS_ESPECIAIS.values()})
 ROOM_LABELS.update({room["id"]: room["label"] for room in ROOMS_SALAS})
 SHIFT_MANHA = "manha"
 SHIFT_TARDE = "tarde"
