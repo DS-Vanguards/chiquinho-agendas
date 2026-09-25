@@ -300,7 +300,33 @@
         });
     }
 
+    function initNavToggle() {
+        var nav = document.querySelector(".navbar");
+        var btn = document.querySelector(".nav-toggle");
+        var links = document.getElementById("nav-links");
+        if (!nav || !btn || !links) return;
+
+        function setOpen(open) {
+            nav.classList.toggle("is-open", open);
+            btn.setAttribute("aria-expanded", open ? "true" : "false");
+            btn.setAttribute("aria-label", open ? "Fechar menu" : "Abrir menu");
+        }
+
+        btn.addEventListener("click", function () {
+            setOpen(!nav.classList.contains("is-open"));
+        });
+        links.querySelectorAll("a").forEach(function (link) {
+            link.addEventListener("click", function () {
+                setOpen(false);
+            });
+        });
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") setOpen(false);
+        });
+    }
+
     initAgendaLive();
     initAdminLive();
     prefetchNav();
+    initNavToggle();
 })();

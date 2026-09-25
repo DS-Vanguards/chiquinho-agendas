@@ -16,6 +16,8 @@
                 </div>
             </form>
 
+            <p class="schedule-scroll-hint">Deslize a grade para o lado para ver todas as salas.</p>
+
             {% if current_user.can_mark_unavailable() %}
             <p class="schedule-hint">Clique nas células brancas para escolher: Bloquear, agendar no seu nome ou Indisponível. Clique no seu nome para desagendar, em BLOQUEADO ou em Indisponível para liberar.</p>
             {% elif current_user.can_choose_marking() %}

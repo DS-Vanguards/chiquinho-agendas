@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{% block title %}Agendamento de Salas{% endblock %}</title>
     <link rel="icon" href="{{ url_for('static', filename='images/favicon.ico') }}" sizes="any">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='images/favicon-32.png') }}">
@@ -19,7 +19,12 @@
             <img src="{{ url_for('static', filename='images/logo-round.png') }}" alt="Logo" class="nav-logo">
             <span>Chiquinho Agendamentos - Leste-3</span>
         </a>
-        <div class="nav-links">
+        <button type="button" class="nav-toggle" aria-label="Abrir menu" aria-expanded="false" aria-controls="nav-links">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+        <div class="nav-links" id="nav-links">
             {% if not current_user.is_professor %}
             <a href="{{ url_for('dashboard') }}">Início</a>
             {% endif %}
