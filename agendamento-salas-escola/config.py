@@ -132,7 +132,7 @@ ROOMS_ESPECIAIS = {
     "MAKER": {"id": "MAKER", "label": "MAKER", "style": "especiais"},
     "AUD": {"id": "AUD", "label": "AUDITÓRIO", "style": "especiais"},
     "INFO": {"id": "INFO", "label": "INFORMÁTICA", "style": "especiais"},
-    "BIB": {"id": "BIB", "label": "SALA LEITURA", "style": "especiais"},
+    "BIB": {"id": "BIB", "label": "SALA DE LEITURA", "style": "especiais"},
     "ARTES": {"id": "ARTES", "label": "SALA DE ARTES", "style": "especiais"},
 }
 # AUD (Auditório) permanece em ROOMS_ESPECIAIS/ROOM_LABELS para agendamentos
