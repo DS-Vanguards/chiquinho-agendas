@@ -21,6 +21,11 @@ def _prepare_database_url(url: str) -> str:
     # Vercel/Render usam postgres:// — SQLAlchemy precisa de postgresql://
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://") :]
+    # SQLAlchemy recente usa psycopg (v3) por padrão; o projeto instala psycopg2-binary.
+    if url.startswith("postgresql+psycopg://"):
+        url = "postgresql+psycopg2://" + url[len("postgresql+psycopg://") :]
+    elif url.startswith("postgresql://"):
+        url = "postgresql+psycopg2://" + url[len("postgresql://") :]
     if url.startswith("postgresql") and "sslmode=" not in url:
         url += ("&" if "?" in url else "?") + "sslmode=require"
     return url
